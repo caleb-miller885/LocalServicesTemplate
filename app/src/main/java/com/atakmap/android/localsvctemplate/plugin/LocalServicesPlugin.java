@@ -2,20 +2,23 @@
 package com.atakmap.android.localsvctemplate.plugin;
 
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
+import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
+import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.maps.Marker;
+import com.atakmap.coremap.maps.coords.GeoBounds;
 import com.atakmap.coremap.maps.coords.GeoPoint;
+import com.atakmap.map.layer.opengl.GLLayerFactory;
 import com.example.calc.proto.CalcGrpc;
 import com.example.calc.proto.HeatmapImage;
 import com.example.calc.proto.LatLon;
@@ -28,6 +31,7 @@ import com.example.calc.proto.RangeBearingResult;
 import com.example.calc.proto.RenderHeatmapRequest;
 import com.example.calc.proto.RenderHeatmapUpdate;
 
+import java.io.IOException;
 import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -58,7 +62,10 @@ public class LocalServicesPlugin implements IPlugin {
     private EditText remoteAddress;
     private TextView output;
     private ProgressBar progressBar;
-    private ImageView image;
+    private View coverageControls;
+
+    // The image from 3., drawn on the map (null until the first result).
+    private CoverageLayer coverage;
 
     // The current connection, and which address it is for ("local" or "host:port").
     private ManagedChannel channel;
@@ -117,6 +124,7 @@ public class LocalServicesPlugin implements IPlugin {
             channel.shutdownNow();
             channel = null;
         }
+        removeCoverage();
 
         // the plugin is stopping, remove the button from the toolbar
         if (uiService == null)
@@ -155,12 +163,31 @@ public class LocalServicesPlugin implements IPlugin {
         remoteAddress = view.findViewById(R.id.remote_address);
         output = view.findViewById(R.id.output);
         progressBar = view.findViewById(R.id.progress);
-        image = view.findViewById(R.id.image);
+        coverageControls = view.findViewById(R.id.coverage_controls);
 
         view.findViewById(R.id.btn_range).setOnClickListener(v -> rangeBearing());
         view.findViewById(R.id.btn_optimise).setOnClickListener(v -> optimiseRoute());
         view.findViewById(R.id.btn_render).setOnClickListener(v -> renderHeatmap());
         view.findViewById(R.id.btn_cancel).setOnClickListener(v -> cancelRunning());
+
+        view.findViewById(R.id.btn_share).setOnClickListener(v -> shareCoverage());
+        view.findViewById(R.id.btn_remove).setOnClickListener(v -> removeCoverage());
+        SeekBar opacity = view.findViewById(R.id.coverage_opacity);
+        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (coverage != null)
+                    coverage.setOpacity(progress / 100f);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
     }
 
     /**
@@ -262,14 +289,22 @@ public class LocalServicesPlugin implements IPlugin {
 
     /**
      * 3. Was POST /render, polling, then GET of the image bytes (several MB). Now one streaming
-     * call, as 2: Progress while it renders, then the result with the image file as bytes.
-     * The image can be over gRPC's 4 MB default, so GrpcChannels raises the limit.
+     * call, as 2: Progress while it renders, then the result with the image file as bytes and
+     * the area it covers. The image can be over gRPC's 4 MB default, so GrpcChannels raises the
+     * limit. Here it stands in for a coverage map: the result is drawn on the map.
      */
     private void renderHeatmap() {
+        // a 10 km square around the map centre
+        GeoPoint centre = MapView.getMapView().getCenterPoint().get();
+        double dLat = 5000 / 111_320.0;
+        double dLon = dLat / Math.cos(Math.toRadians(centre.getLatitude()));
         RenderHeatmapRequest request = RenderHeatmapRequest.newBuilder()
                 .setWidth(1024).setHeight(1024)
                 .setSeed(System.currentTimeMillis())
                 .setSimulateMs(50)
+                .setBounds(com.example.calc.proto.GeoBounds.newBuilder()
+                        .setNorth(centre.getLatitude() + dLat).setSouth(centre.getLatitude() - dLat)
+                        .setEast(centre.getLongitude() + dLon).setWest(centre.getLongitude() - dLon))
                 .build();
 
         startLong("render heatmap...");
@@ -282,16 +317,49 @@ public class LocalServicesPlugin implements IPlugin {
                         } else if (update.hasResult()) {
                             HeatmapImage r = update.getResult();
                             byte[] file = r.getData().toByteArray();
-                            // Decoding ~1 MP is quick enough for a demo; decode bigger images off
-                            // the UI thread.
-                            Bitmap bitmap = BitmapFactory.decodeByteArray(file, 0, file.length);
-                            image.setImageBitmap(bitmap);
-                            image.setVisibility(View.VISIBLE);
-                            output.setText(String.format(Locale.US, "render heatmap -> %dx%d %s, %d KB",
+                            showCoverage(file, r.getBounds());
+                            output.setText(String.format(Locale.US, "render heatmap -> %dx%d %s, %d KB, on the map",
                                     r.getWidth(), r.getHeight(), r.getMimeType(), file.length / 1024));
                         }
                     }
                 });
+    }
+
+    // ---- the coverage map on the map (coverage/) ----------------------------------------------
+
+    /** Puts the image on the map, replacing the previous one. */
+    private void showCoverage(byte[] png, com.example.calc.proto.GeoBounds b) {
+        if (coverage == null) {
+            GLLayerFactory.register(GLCoverageLayer.SPI);   // tells ATAK how to draw a CoverageLayer
+            coverage = new CoverageLayer("Coverage");
+            SeekBar opacity = coverageControls.findViewById(R.id.coverage_opacity);
+            coverage.setOpacity(opacity.getProgress() / 100f);
+            MapView.getMapView().addLayer(MapView.RenderStack.MAP_SURFACE_OVERLAYS, coverage);
+        }
+        // Decoding ~1 MP is quick enough for a demo; decode bigger images off the UI thread.
+        coverage.setImage(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
+        coverageControls.setVisibility(View.VISIBLE);
+    }
+
+    /** Sends it as a data package: a KMZ that any ATAK shows as an image overlay. */
+    private void shareCoverage() {
+        if (coverage == null)
+            return;
+        try {
+            CoverageShare.send(MapView.getMapView(), coverage);
+        } catch (IOException e) {
+            output.setText("share failed: " + e.getMessage());
+        }
+    }
+
+    private void removeCoverage() {
+        if (coverage == null)
+            return;
+        MapView.getMapView().removeLayer(MapView.RenderStack.MAP_SURFACE_OVERLAYS, coverage);
+        GLLayerFactory.unregister(GLCoverageLayer.SPI);
+        coverage = null;
+        if (coverageControls != null)
+            coverageControls.setVisibility(View.GONE);
     }
 
     /**
@@ -338,7 +406,6 @@ public class LocalServicesPlugin implements IPlugin {
         output.setText(label);
         progressBar.setProgress(0);
         progressBar.setVisibility(View.VISIBLE);
-        image.setVisibility(View.GONE);
     }
 
     private void showProgress(Progress p) {

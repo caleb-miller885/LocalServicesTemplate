@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.example.calc.proto.CalcGrpc;
+import com.example.calc.proto.GeoBounds;
 import com.example.calc.proto.HeatmapImage;
 import com.example.calc.proto.LatLon;
 import com.example.calc.proto.OptimiseRouteRequest;
@@ -174,7 +175,7 @@ public class CalcServiceTest {
     @Test
     public void heatmapArrivesAsAValidPngOver4MB() {
         Iterator<RenderHeatmapUpdate> updates = calc.renderHeatmap(RenderHeatmapRequest.newBuilder()
-                .setWidth(2048).setHeight(2048).setSeed(42).build());
+                .setWidth(2048).setHeight(2048).setSeed(42).setBounds(AREA).build());
         HeatmapImage result = null;
         while (updates.hasNext()) {
             RenderHeatmapUpdate u = updates.next();
@@ -187,6 +188,18 @@ public class CalcServiceTest {
         assertArrayEquals(new byte[] {(byte) 137, 'P', 'N', 'G'}, Arrays.copyOf(png, 4));
         assertEquals(2048, readInt(png, 16));   // IHDR width
         assertEquals(2048, readInt(png, 20));   // IHDR height
+        assertEquals(6, png[25]);               // IHDR colour type: RGBA, for the no-coverage pixels
+        assertEquals(AREA, result.getBounds()); // the area comes back with the image
+    }
+
+    @Test
+    public void heatmapNeedsBounds() {
+        try {
+            calc.renderHeatmap(RenderHeatmapRequest.newBuilder().setWidth(16).setHeight(16).build()).hasNext();
+            fail("expected INVALID_ARGUMENT");
+        } catch (StatusRuntimeException e) {
+            assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
+        }
     }
 
     @Test
@@ -198,6 +211,9 @@ public class CalcServiceTest {
             assertEquals(Status.Code.INVALID_ARGUMENT, e.getStatus().getCode());
         }
     }
+
+    private static final GeoBounds AREA = GeoBounds.newBuilder()
+            .setNorth(-34.88).setSouth(-34.97).setEast(138.65).setWest(138.55).build();
 
     private static int readInt(byte[] b, int at) {
         return (b[at] & 0xff) << 24 | (b[at + 1] & 0xff) << 16 | (b[at + 2] & 0xff) << 8 | (b[at + 3] & 0xff);

@@ -1,6 +1,7 @@
 package com.example.calc;
 
 import com.example.calc.proto.CalcGrpc;
+import com.example.calc.proto.GeoBounds;
 import com.example.calc.proto.HeatmapImage;
 import com.example.calc.proto.LatLon;
 import com.example.calc.proto.OptimiseRouteRequest;
@@ -123,13 +124,16 @@ public class CalcService extends CalcGrpc.CalcImplBase {
         ServerCallStreamObserver<RenderHeatmapUpdate> out = (ServerCallStreamObserver<RenderHeatmapUpdate>) reply;
         int w = request.getWidth() == 0 ? 1024 : request.getWidth();
         int h = request.getHeight() == 0 ? 1024 : request.getHeight();
-        if (w < 1 || h < 1 || w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE) {
-            out.onError(Status.INVALID_ARGUMENT
-                    .withDescription("width and height must be 1.." + MAX_IMAGE_SIDE).asRuntimeException());
+        String bad = w < 1 || h < 1 || w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE
+                ? "width and height must be 1.." + MAX_IMAGE_SIDE
+                : invalid(request.hasBounds() ? request.getBounds() : null);
+        if (bad != null) {
+            out.onError(Status.INVALID_ARGUMENT.withDescription(bad).asRuntimeException());
             return;
         }
 
-        // A made-up "signal strength" map: a few sources, falling off with distance, plus noise.
+        // A made-up "signal strength" map over the requested area: a few sources, falling off
+        // with distance, plus noise. Weak signal (below NO_COVERAGE) is left transparent.
         Random random = new Random(request.getSeed());
         int sources = 6;
         double[] sx = new double[sources], sy = new double[sources], power = new double[sources];
@@ -140,7 +144,7 @@ public class CalcService extends CalcGrpc.CalcImplBase {
         }
         double scale2 = Math.pow(Math.min(w, h) / 6.0, 2);
 
-        byte[] rgb = new byte[w * h * 3];
+        byte[] rgba = new byte[w * h * 4];
         int rowsPerStep = Math.max(1, h / PROGRESS_STEPS);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -148,7 +152,7 @@ public class CalcService extends CalcGrpc.CalcImplBase {
                 for (int k = 0; k < sources; k++)
                     v += power[k] / (1 + ((x - sx[k]) * (x - sx[k]) + (y - sy[k]) * (y - sy[k])) / scale2);
                 v += (random.nextDouble() - 0.5) * 0.15;
-                colour(Math.max(0, Math.min(1, v)), rgb, (y * w + x) * 3);
+                colour(Math.max(0, Math.min(1, v)), rgba, (y * w + x) * 4);
             }
             if ((y + 1) % rowsPerStep == 0) {
                 if (out.isCancelled() || !pause(request.getSimulateMs())) return;
@@ -161,7 +165,7 @@ public class CalcService extends CalcGrpc.CalcImplBase {
         out.onNext(RenderHeatmapUpdate.newBuilder().setProgress(progress(0.9, "encoding")).build());
         byte[] png;
         try {
-            png = Png.encodeRgb(w, h, rgb);
+            png = Png.encodeRgba(w, h, rgba);
         } catch (IOException e) {
             out.onError(Status.INTERNAL.withDescription("PNG encoding failed: " + e).asRuntimeException());
             return;
@@ -170,11 +174,21 @@ public class CalcService extends CalcGrpc.CalcImplBase {
         // One message with the whole file. It can be over 4 MB, gRPC's default limit for a received
         // message, so clients raise theirs (GrpcChannels.MAX_MESSAGE_BYTES).
         out.onNext(RenderHeatmapUpdate.newBuilder().setResult(HeatmapImage.newBuilder()
-                .setMimeType("image/png").setWidth(w).setHeight(h).setData(ByteString.copyFrom(png))).build());
+                .setMimeType("image/png").setWidth(w).setHeight(h).setData(ByteString.copyFrom(png))
+                .setBounds(request.getBounds())).build());
         out.onCompleted();
     }
 
     // ---- helpers -----------------------------------------------------------------------------
+
+    static String invalid(GeoBounds b) {
+        if (b == null) return "bounds are required";
+        if (b.getSouth() < -90 || b.getNorth() > 90 || b.getSouth() >= b.getNorth())
+            return "bounds need -90 <= south < north <= 90";
+        if (b.getWest() < -180 || b.getEast() > 180 || b.getWest() >= b.getEast())
+            return "bounds need -180 <= west < east <= 180";
+        return null;
+    }
 
     static String invalid(LatLon p) {
         if (p.getLat() < -90 || p.getLat() > 90) return "latitude out of range: " + p.getLat();
@@ -230,8 +244,12 @@ public class CalcService extends CalcGrpc.CalcImplBase {
         }
     }
 
-    /** 0 → blue, 1 → red, through cyan, green and yellow. */
-    private static void colour(double v, byte[] rgb, int at) {
+    /** Signal below this is "no coverage": a fully transparent pixel. */
+    static final double NO_COVERAGE = 0.25;
+
+    /** 0 → blue, 1 → red, through cyan, green and yellow; transparent below NO_COVERAGE. Pixels are
+     *  fully transparent or fully opaque, so ATAK can fade the whole image evenly. */
+    private static void colour(double v, byte[] rgba, int at) {
         double hue = (1 - v) * 240 / 60;   // 0..4 sextants
         int i = (int) Math.floor(hue);
         double f = hue - i;
@@ -243,8 +261,9 @@ public class CalcService extends CalcGrpc.CalcImplBase {
             case 3: r = 0; g = 1 - f; b = 1; break;      // cyan → blue
             default: r = 0; g = 0; b = 1; break;         // blue
         }
-        rgb[at] = (byte) Math.round(r * 255);
-        rgb[at + 1] = (byte) Math.round(g * 255);
-        rgb[at + 2] = (byte) Math.round(b * 255);
+        rgba[at] = (byte) Math.round(r * 255);
+        rgba[at + 1] = (byte) Math.round(g * 255);
+        rgba[at + 2] = (byte) Math.round(b * 255);
+        rgba[at + 3] = (byte) (v < NO_COVERAGE ? 0 : 255);
     }
 }

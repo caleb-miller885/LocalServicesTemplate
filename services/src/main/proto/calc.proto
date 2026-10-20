@@ -23,12 +23,22 @@ service Calc {
   // 3. REST: POST /render -> job id, poll until done, then GET the image bytes (several MB).
   //    gRPC: as 2; the result carries the image file as bytes. It can be over gRPC's 4 MB
   //    default message limit, so the client raises its limit (GrpcChannels.MAX_MESSAGE_BYTES).
+  //    It stands in for a coverage map: the image comes with the area it covers, so the plugin
+  //    can draw it on the map (and share it as a KMZ).
   rpc RenderHeatmap (RenderHeatmapRequest) returns (stream RenderHeatmapUpdate);
 }
 
 message LatLon {
   double lat = 1;   // degrees, -90..90
   double lon = 2;   // degrees, -180..180
+}
+
+// A lat/lon box, in degrees.
+message GeoBounds {
+  double north = 1;
+  double south = 2;
+  double east = 3;
+  double west = 4;
 }
 
 // Sent during long calculations (2 and 3).
@@ -78,13 +88,16 @@ message RenderHeatmapRequest {
   int32 height = 2;             // pixels, 0 = default (1024), max 2048
   int64 seed = 3;               // same seed, same image
   int32 simulate_ms = 4;        // DEMO ONLY: extra time per progress step
+  GeoBounds bounds = 5;         // the area to cover
 }
 
 message HeatmapImage {
   string mime_type = 1;         // "image/png"
   int32 width = 2;
   int32 height = 3;
-  bytes data = 4;               // the image file
+  bytes data = 4;               // the image file. Pixels are evenly spaced in lat/lon (EPSG:4326),
+                                // and either fully transparent (no coverage) or fully opaque
+  GeoBounds bounds = 5;         // the area the image covers: its edges, north/south/east/west
 }
 
 message RenderHeatmapUpdate {
