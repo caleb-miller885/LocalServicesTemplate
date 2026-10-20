@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">Local Services Template</string>
+    <!-- description -->
+    <string name="app_desc">Template for running a plugin\'s backend services on the device (gRPC over Binder), with the same gRPC stubs as the remote services</string>
+
+    <!-- Demo pane -->
+    <string name="run_on_device">Run services on device</string>
+    <string name="remote_address_label">Remote gRPC service (host:port)</string>
+    <string name="remote_address_hint">host:port</string>
+    <string name="remote_address_default">10.0.0.5:9090</string>
+    <string name="calc_examples">Calculation examples</string>
+    <string name="range_bearing">1. Range/bearing: self to map centre (request, answer)</string>
+    <string name="optimise_route">2. Optimise route (progress, then result)</string>
+    <string name="render_heatmap">3. Render heatmap (progress, then the image)</string>
+    <string name="cancel">Cancel calculation</string>
+
+
+
+
+</resources>

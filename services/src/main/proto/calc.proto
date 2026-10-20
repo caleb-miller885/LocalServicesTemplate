@@ -1,0 +1,95 @@
+// Example calculation service: the three shapes of REST endpoint the old API had, as gRPC.
+// It's a stand-in - replace it with the real services' .proto files.
+// The Gradle protobuf plugin turns every .proto here into Java at build time
+// (message classes + CalcGrpc with the server base class and client stubs).
+syntax = "proto3";
+
+package calc;
+
+option java_package = "com.example.calc.proto";
+option java_multiple_files = true;
+
+service Calc {
+  // 1. REST: POST /range-bearing with JSON, answer comes back as JSON.
+  //    gRPC: a normal (unary) rpc - one request in, one answer out.
+  rpc RangeBearing (RangeBearingRequest) returns (RangeBearingResult);
+
+  // 2. REST: POST /optimise -> job id, then poll GET /optimise/{id} every N ms until the JSON
+  //    result is ready.
+  //    gRPC: ONE call. The server streams Progress updates while it works, then the result, then
+  //    ends the call. No job id, no polling. To cancel, the client cancels the call.
+  rpc OptimiseRoute (OptimiseRouteRequest) returns (stream OptimiseRouteUpdate);
+
+  // 3. REST: POST /render -> job id, poll until done, then GET the image bytes (several MB).
+  //    gRPC: as 2; the result carries the image file as bytes. It can be over gRPC's 4 MB
+  //    default message limit, so the client raises its limit (GrpcChannels.MAX_MESSAGE_BYTES).
+  rpc RenderHeatmap (RenderHeatmapRequest) returns (stream RenderHeatmapUpdate);
+}
+
+message LatLon {
+  double lat = 1;   // degrees, -90..90
+  double lon = 2;   // degrees, -180..180
+}
+
+// Sent during long calculations (2 and 3).
+message Progress {
+  double fraction = 1;   // 0..1
+  string message = 2;
+}
+
+// ---- 1. range and bearing ------------------------------------------------------------------
+
+message RangeBearingRequest {
+  LatLon from = 1;
+  LatLon to = 2;
+}
+
+message RangeBearingResult {
+  double range_m = 1;       // great-circle distance
+  double bearing_deg = 2;   // initial bearing, 0..360 from true north
+}
+
+// ---- 2. route optimisation (long, small result) --------------------------------------------
+
+message OptimiseRouteRequest {
+  repeated LatLon points = 1;   // 2..500 points; the first is the start and stays first
+  int32 iterations = 2;         // 0 = default (20000)
+  int32 simulate_ms = 3;        // DEMO ONLY: extra time per progress step, so progress is visible
+}
+
+message OptimiseRouteResult {
+  repeated int32 order = 1;     // indexes into the request's points, in visiting order
+  double length_m = 2;          // optimised route length
+  double initial_length_m = 3;  // route length in the order given
+}
+
+// One message type for the whole stream: either progress, or (last) the result.
+message OptimiseRouteUpdate {
+  oneof kind {
+    Progress progress = 1;
+    OptimiseRouteResult result = 2;
+  }
+}
+
+// ---- 3. heatmap image (long, large binary result) ------------------------------------------
+
+message RenderHeatmapRequest {
+  int32 width = 1;              // pixels, 0 = default (1024), max 2048
+  int32 height = 2;             // pixels, 0 = default (1024), max 2048
+  int64 seed = 3;               // same seed, same image
+  int32 simulate_ms = 4;        // DEMO ONLY: extra time per progress step
+}
+
+message HeatmapImage {
+  string mime_type = 1;         // "image/png"
+  int32 width = 2;
+  int32 height = 3;
+  bytes data = 4;               // the image file
+}
+
+message RenderHeatmapUpdate {
+  oneof kind {
+    Progress progress = 1;
+    HeatmapImage result = 2;
+  }
+}

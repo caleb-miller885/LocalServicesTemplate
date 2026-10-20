@@ -1,0 +1,38 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="GoogleAppIndexingWarning">
+
+    <application 
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:description="@string/app_desc"
+        android:theme="@style/AppTheme" >
+        <meta-data android:name="plugin-api" android:value="${atakApiVersion}"/>
+        <meta-data android:name="app_desc" android:value="@string/app_desc"/>
+
+
+       <!-- The on-device gRPC services (localsvc/LocalServiceHost). Runs outside ATAK - it belongs
+            to this plugin's package, not ATAK's; ":svc" only names the process for ps/logcat/debugger.
+            exported=true is required because ATAK (a different app) is the one that connects;
+            its security policy (AllowPackages) only lets ATAK and this plugin in. -->
+       <service
+           android:name=".localsvc.LocalServiceHost"
+           android:process=":svc"
+           android:exported="true" />
+
+       <!-- This fictitious activity entry allow for ATAK 4.6.0.2 and newer to perform 
+            plugin discovery  android devices.  If this is removed, the plugin will 
+            not be able to be discovered or loaded.  -->
+       <activity android:name="com.atakmap.app.component"
+           android:exported="true"
+           tools:ignore="MissingClass">
+           <intent-filter android:label="@string/app_name">
+              <action android:name="com.atakmap.app.component" />
+           </intent-filter>
+       </activity>
+
+
+    </application>
+
+</manifest>

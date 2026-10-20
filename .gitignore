@@ -1,0 +1,20 @@
+# Build output
+build/
+.takdev/
+
+# Gradle
+.gradle/
+
+# Local machine config (SDK path, TAK repo credentials) - copy template.local.properties instead
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Signing keys - never commit these
+*.jks
+*.keystore
+
+# OS cruft
+.DS_Store
