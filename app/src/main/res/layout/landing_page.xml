@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Landing page: three lists behind one segment strip.
+    All three segments (with their counts) are always on screen, so the operator sees the whole
+    picture without opening anything. Tap a segment, or swipe the list left/right, to change list.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/seg_nodes"
+            style="@style/segment" />
+
+        <Button
+            android:id="@+id/seg_waypoints"
+            style="@style/segment" />
+
+        <Button
+            android:id="@+id/seg_zones"
+            style="@style/segment" />
+    </LinearLayout>
+
+    <!-- What the list is showing and how it's sorted, so a swipe never leaves the operator guessing -->
+    <TextView
+        android:id="@+id/list_caption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/heading_yellow" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/landing_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fadeScrollbars="false" />
+
+        <TextView
+            android:id="@+id/landing_empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:padding="16dp"
+            android:textSize="16sp" />
+    </FrameLayout>
+</LinearLayout>

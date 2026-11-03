@@ -14,6 +14,7 @@ import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
 import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
+import com.atakmap.android.localsvctemplate.plugin.landing.LandingPane;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.maps.Marker;
 import com.atakmap.coremap.maps.coords.GeoBounds;
@@ -32,6 +33,8 @@ import com.example.calc.proto.RenderHeatmapRequest;
 import com.example.calc.proto.RenderHeatmapUpdate;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +66,7 @@ public class LocalServicesPlugin implements IPlugin {
     private TextView output;
     private ProgressBar progressBar;
     private View coverageControls;
+    private LandingPane landing;
 
     // The image from 3., drawn on the map (null until the first result).
     private CoverageLayer coverage;
@@ -159,6 +163,10 @@ public class LocalServicesPlugin implements IPlugin {
     // ---- demo UI: the same gRPC calls against the on-device services or a remote server -------
 
     private void bindViews(View view) {
+        bindTabs(view);
+        landing = new LandingPane(pluginContext, view.findViewById(R.id.picture_page));
+        showSampleNodesAndZones();
+
         localToggle = view.findViewById(R.id.local_toggle);
         remoteAddress = view.findViewById(R.id.remote_address);
         output = view.findViewById(R.id.output);
@@ -188,6 +196,75 @@ public class LocalServicesPlugin implements IPlugin {
             public void onStopTrackingTouch(SeekBar bar) {
             }
         });
+    }
+
+    /** The tabs along the top: one page showing at a time, the Picture page first. */
+    private void bindTabs(View view) {
+        View[] tabs = { view.findViewById(R.id.tab_picture), view.findViewById(R.id.tab_services) };
+        View[] pages = { view.findViewById(R.id.picture_page), view.findViewById(R.id.services_page) };
+        for (int i = 0; i < tabs.length; i++) {
+            final int shown = i;
+            tabs[i].setOnClickListener(v -> {
+                for (int j = 0; j < tabs.length; j++) {
+                    tabs[j].setSelected(j == shown);
+                    pages[j].setVisibility(j == shown ? View.VISIBLE : View.GONE);
+                }
+            });
+        }
+        tabs[0].setSelected(true);
+    }
+
+    // ---- landing page lists ----------------------------------------------------------------
+
+    /**
+     * Made-up nodes and zones near the map centre, so the landing page has something to show.
+     * Replace with the real sources (node health feed, drawn shapes on the map) - each list is
+     * sorted most urgent first before it goes in.
+     */
+    private void showSampleNodesAndZones() {
+        GeoPoint c = MapView.getMapView().getCenterPoint().get();
+        List<LandingPane.Item> nodes = new ArrayList<>();
+        nodes.add(new LandingPane.Item("RF-03 ridge", "last heard 4 min ago", "OFFLINE",
+                LandingPane.Status.BAD, offset(c, 0.020, -0.015)));
+        nodes.add(new LandingPane.Item("AC-02 culvert", "EMCON until 14:30Z", "SILENT",
+                LandingPane.Status.WARN, offset(c, -0.012, 0.008)));
+        nodes.add(new LandingPane.Item("RF-01 hill 212", "battery 81%  -  2 s ago", "ONLINE",
+                LandingPane.Status.OK, offset(c, 0.005, 0.010)));
+        nodes.add(new LandingPane.Item("EO-01 tower", "battery 64%  -  1 s ago", "ONLINE",
+                LandingPane.Status.OK, offset(c, -0.004, -0.006)));
+        landing.setItems(LandingPane.Category.NODES, nodes);
+
+        List<LandingPane.Item> zones = new ArrayList<>();
+        zones.add(new LandingPane.Item("Village", "1.2 km\u00b2  -  6 points", "NO-GO",
+                LandingPane.Status.BAD, offset(c, 0.015, 0.020)));
+        zones.add(new LandingPane.Item("Search area A", "4.8 km\u00b2  -  4 points", "OPS",
+                LandingPane.Status.OK, offset(c, -0.010, -0.020)));
+        landing.setItems(LandingPane.Category.ZONES, zones);
+    }
+
+    /** The optimised route from 2., in visiting order, with leg and running distance. */
+    private void showWaypoints(List<LatLon> points, OptimiseRouteResult r) {
+        List<LandingPane.Item> waypoints = new ArrayList<>();
+        GeoPoint previous = null;
+        double total = 0;
+        for (int i = 0; i < r.getOrderCount(); i++) {
+            LatLon p = points.get(r.getOrder(i));
+            GeoPoint point = new GeoPoint(p.getLat(), p.getLon());
+            double leg = previous == null ? 0 : previous.distanceTo(point);
+            total += leg;
+            waypoints.add(new LandingPane.Item(
+                    i == 0 ? "WP 1  (start)" : "WP " + (i + 1),
+                    String.format(Locale.US, "%.5f, %.5f", p.getLat(), p.getLon()),
+                    String.format(Locale.US, "+%.1f km  (%.1f)", leg / 1000, total / 1000),
+                    i == 0 ? LandingPane.Status.OK : LandingPane.Status.NONE,
+                    point));
+            previous = point;
+        }
+        landing.setItems(LandingPane.Category.WAYPOINTS, waypoints);
+    }
+
+    private static GeoPoint offset(GeoPoint c, double dLat, double dLon) {
+        return new GeoPoint(c.getLatitude() + dLat, c.getLongitude() + dLon);
     }
 
     /**
@@ -279,6 +356,7 @@ public class LocalServicesPlugin implements IPlugin {
                             showProgress(update.getProgress());
                         } else if (update.hasResult()) {
                             OptimiseRouteResult r = update.getResult();
+                            showWaypoints(request.getPointsList(), r);
                             output.setText(String.format(Locale.US,
                                     "optimise route -> %.0f m (was %.0f m)\norder: %s",
                                     r.getLengthM(), r.getInitialLengthM(), r.getOrderList()));

@@ -19,6 +19,23 @@
     <string name="coverage_remove">Remove from map</string>
     <string name="cancel">Cancel calculation</string>
 
+    <!-- Tabs -->
+    <string name="tab_picture">Picture</string>
+    <string name="tab_services">Services</string>
+
+    <!-- Landing pane: %1$d = count, %2$d = how many need attention -->
+    <string name="seg_nodes">Nodes %1$d</string>
+    <string name="seg_nodes_alert">Nodes %1$d\n%2$d offline</string>
+    <string name="seg_waypoints">Waypoints %1$d</string>
+    <string name="seg_zones">Zones %1$d</string>
+    <string name="seg_zones_alert">Zones %1$d\n%2$d no-go</string>
+    <string name="caption_nodes">Active nodes - offline first. Tap to pan, swipe for waypoints</string>
+    <string name="caption_waypoints">Optimised route - in visit order. Tap to pan</string>
+    <string name="caption_zones">Drawn polygons - no-go zones first. Tap to pan</string>
+    <string name="empty_nodes">No nodes reporting yet</string>
+    <string name="empty_waypoints">No optimised route yet.\nRun 2. Optimise route on the Services tab</string>
+    <string name="empty_zones">No polygons drawn yet</string>
+
 
 
 

@@ -1,132 +1,164 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Tabs along the top; the Picture tab (landing_page.xml) is what the pane opens on -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:fadeScrollbars="false"
+    android:layout_height="match_parent"
     android:layout_marginLeft="3dp"
-    android:layout_marginRight="3dp">
+    android:layout_marginRight="3dp"
+    android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="6dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name" />
-
-        <CheckBox
-            android:id="@+id/local_toggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="@string/run_on_device" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/remote_address_label" />
-
-        <EditText
-            android:id="@+id/remote_address"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/remote_address_hint"
-            android:importantForAutofill="no"
-            android:inputType="textUri"
-            android:text="@string/remote_address_default" />
-
-        <!-- Calculation examples: one button per shape of the old REST API (calc.proto) -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/calc_examples" />
+        android:orientation="horizontal">
 
         <Button
-            android:id="@+id/btn_range"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/range_bearing" />
+            android:id="@+id/tab_picture"
+            style="@style/segment"
+            android:text="@string/tab_picture" />
 
         <Button
-            android:id="@+id/btn_optimise"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/optimise_route" />
+            android:id="@+id/tab_services"
+            style="@style/segment"
+            android:text="@string/tab_services" />
+    </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_render"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/render_heatmap" />
+    <include
+        android:id="@+id/picture_page"
+        layout="@layout/landing_page"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-        <Button
-            android:id="@+id/btn_cancel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/cancel" />
+    <ScrollView
+        android:id="@+id/services_page"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone"
+        android:fadeScrollbars="false">
 
-        <ProgressBar
-            android:id="@+id/progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/output"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textIsSelectable="true" />
-
-        <!-- Shown once 3. has put an image on the map -->
         <LinearLayout
-            android:id="@+id/coverage_controls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:visibility="gone">
+            android:padding="6dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/coverage_opacity" />
+                android:text="@string/app_name" />
 
-            <SeekBar
-                android:id="@+id/coverage_opacity"
+            <CheckBox
+                android:id="@+id/local_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/run_on_device" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/remote_address_label" />
+
+            <EditText
+                android:id="@+id/remote_address"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/remote_address_hint"
+                android:importantForAutofill="no"
+                android:inputType="textUri"
+                android:text="@string/remote_address_default" />
+
+            <!-- Calculation examples: one button per shape of the old REST API (calc.proto) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/calc_examples" />
+
+            <Button
+                android:id="@+id/btn_range"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/range_bearing" />
+
+            <Button
+                android:id="@+id/btn_optimise"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/optimise_route" />
+
+            <Button
+                android:id="@+id/btn_render"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/render_heatmap" />
+
+            <Button
+                android:id="@+id/btn_cancel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/cancel" />
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:max="100"
-                android:progress="70" />
+                android:visibility="gone" />
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/output"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:fontFamily="monospace"
+                android:textIsSelectable="true" />
 
-                <Button
-                    android:id="@+id/btn_share"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/coverage_share" />
+            <!-- Shown once 3. has put an image on the map -->
+            <LinearLayout
+                android:id="@+id/coverage_controls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
-                <Button
-                    android:id="@+id/btn_remove"
-                    android:layout_width="0dp"
+                <TextView
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/coverage_remove" />
+                    android:layout_marginTop="8dp"
+                    android:text="@string/coverage_opacity" />
+
+                <SeekBar
+                    android:id="@+id/coverage_opacity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100"
+                    android:progress="70" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_share"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/coverage_share" />
+
+                    <Button
+                        android:id="@+id/btn_remove"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/coverage_remove" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
 
-    </LinearLayout>
-</ScrollView>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
