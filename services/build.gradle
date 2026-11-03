@@ -1,17 +1,24 @@
-// The services module, as source:
+// The services build (a stand-in for the services team's repo):
 //   src/main/proto/  the raw .proto files. The gRPC code (messages, client stubs, the ImplBase
-//                    server base classes) is generated from them on every build, into build/.
+//                    server base classes) is generated from them here, into build/.
 //   src/main/java/   the core service implementations (extend the generated ImplBase), needed
 //                    to run the services on the device. Plain Java: no Spring, no Android.
-// calc.proto and CalcService are an example - replace them with the real services (README.md).
+// Both are published together as com.example:calc-services, which the plugin depends on; the
+// plugin never runs protoc. calc.proto and CalcService are an example - replace them with the
+// real services (README.md).
 plugins {
     id 'java-library'
-    id 'com.google.protobuf'
+    id 'maven-publish'
+    id 'com.google.protobuf' version '0.9.5'
 }
+
+group = 'com.example'
+version = '1.0.0' // bump on every .proto or service change, then update app/build.gradle to match
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar() // includes the generated code, so the IDE can show it from the plugin
 }
 
 def grpcVersion = '1.84.0'
@@ -20,7 +27,7 @@ def protocVersion = '3.25.9' // matches the protobuf-javalite that grpc 1.84.0 u
 dependencies {
     // "api" so the plugin also sees the generated classes (CalcGrpc, LatLon, ...)
     api "io.grpc:grpc-stub:$grpcVersion"
-    api "io.grpc:grpc-protobuf-lite:$grpcVersion"
+    api "io.grpc:grpc-protobuf-lite:$grpcVersion"   
     compileOnly 'org.apache.tomcat:annotations-api:6.0.53' // @Generated in the generated code
 
     testImplementation 'junit:junit:4.13.2'
@@ -39,6 +46,29 @@ protobuf {
             task.builtins { java { option 'lite' } }
             // write CalcGrpc next to the messages, so the IDE shows one generated package, not two
             task.plugins { grpc { option 'lite'; outputSubDir = 'java' } }
+        }
+    }
+}
+
+// publishToMavenLocal puts the library in ~/.m2, where the plugin's build finds it. For a team,
+// publish to a shared repository instead: pass -PservicesRepoUrl=... (plus credentials) and run
+// "publish".
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'calc-services'
+            from components.java
+        }
+    }
+    repositories {
+        if (project.hasProperty('servicesRepoUrl')) {
+            maven {
+                url = servicesRepoUrl
+                credentials {
+                    username = findProperty('servicesRepoUser')
+                    password = findProperty('servicesRepoPassword')
+                }
+            }
         }
     }
 }

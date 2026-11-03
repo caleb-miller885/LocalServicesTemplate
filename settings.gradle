@@ -16,6 +16,8 @@ dependencyResolutionManagement {
 
 include ':app'
 
-// The services: the raw .proto files (gRPC code is generated from them at build time) and the
-// core service implementations, as source. See README.md.
-include ':services'
+// The services are NOT part of this build. They're published as a library
+// (com.example:calc-services, in app/build.gradle) by their own build in services/. See README.md.
+// To work on the services and the plugin together, uncomment this: Gradle then builds the
+// services from source in place of the published library.
+// includeBuild('services')

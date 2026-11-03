@@ -1,0 +1,18 @@
+// The services are their own Gradle build, standing in for the services team's repo. They
+// generate the gRPC lite code and publish it, with the service classes, as one versioned
+// library (com.example:calc-services). The plugin depends on that library. See README.md.
+//
+//   ../gradlew -p services test publishToMavenLocal
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'calc-services'

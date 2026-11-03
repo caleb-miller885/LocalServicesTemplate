@@ -287,8 +287,9 @@ def getCommandFlavor() {
 dependencies {
     implementation fileTree(dir: 'libs', include: '*.jar')
 
-    // The services: .proto files (generated into stubs) + the core implementations. See README.md.
-    implementation project(':services')
+    // The services: the generated gRPC lite code + the core implementations, published by the
+    // services build (../services). Pin the exact version; no protoc runs in this build. See README.md.
+    implementation 'com.example:calc-services:1.0.0'
 
     // gRPC transports:
     //   grpc-binder - talks to the services running on this device (Android Binder, no network)
