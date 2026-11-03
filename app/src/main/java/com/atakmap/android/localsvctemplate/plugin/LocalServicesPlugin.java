@@ -163,7 +163,7 @@ public class LocalServicesPlugin implements IPlugin {
     // ---- demo UI: the same gRPC calls against the on-device services or a remote server -------
 
     private void bindViews(View view) {
-        bindTabs(view);
+        bindToolbar(view);
         landing = new LandingPane(pluginContext, view.findViewById(R.id.picture_page));
         showSampleNodesAndZones();
 
@@ -198,20 +198,36 @@ public class LocalServicesPlugin implements IPlugin {
         });
     }
 
-    /** The tabs along the top: one page showing at a time, the Picture page first. */
-    private void bindTabs(View view) {
-        View[] tabs = { view.findViewById(R.id.tab_picture), view.findViewById(R.id.tab_services) };
-        View[] pages = { view.findViewById(R.id.picture_page), view.findViewById(R.id.services_page) };
+    /**
+     * The icon toolbar along the top: one page showing at a time, the Picture page first. Icons
+     * without a page yet share a placeholder; give one a page by adding it to the layout and
+     * putting its id in pages[] here.
+     */
+    private void bindToolbar(View view) {
+        int[] tabIds = { R.id.tab_picture, R.id.tab_services, R.id.tab_layers,
+                R.id.tab_alerts, R.id.tab_log, R.id.tab_settings };
+        View placeholder = view.findViewById(R.id.placeholder_page);
+        View[] pages = { view.findViewById(R.id.picture_page), view.findViewById(R.id.services_page),
+                placeholder, placeholder, placeholder, placeholder };
+        View[] tabs = new View[tabIds.length];
+        for (int i = 0; i < tabIds.length; i++)
+            tabs[i] = view.findViewById(tabIds[i]);
+
         for (int i = 0; i < tabs.length; i++) {
             final int shown = i;
             tabs[i].setOnClickListener(v -> {
                 for (int j = 0; j < tabs.length; j++) {
                     tabs[j].setSelected(j == shown);
-                    pages[j].setVisibility(j == shown ? View.VISIBLE : View.GONE);
+                    tabs[j].setAlpha(j == shown ? 1f : 0.5f);
+                    pages[j].setVisibility(View.GONE);
                 }
+                pages[shown].setVisibility(View.VISIBLE);
+                if (pages[shown] == placeholder)
+                    ((TextView) placeholder).setText(pluginContext.getString(
+                            R.string.placeholder_page, tabs[shown].getContentDescription()));
             });
         }
-        tabs[0].setSelected(true);
+        tabs[0].performClick();
     }
 
     // ---- landing page lists ----------------------------------------------------------------
@@ -225,20 +241,20 @@ public class LocalServicesPlugin implements IPlugin {
         GeoPoint c = MapView.getMapView().getCenterPoint().get();
         List<LandingPane.Item> nodes = new ArrayList<>();
         nodes.add(new LandingPane.Item("RF-03 ridge", "last heard 4 min ago", "OFFLINE",
-                LandingPane.Status.BAD, offset(c, 0.020, -0.015)));
+                true, offset(c, 0.020, -0.015)));
         nodes.add(new LandingPane.Item("AC-02 culvert", "EMCON until 14:30Z", "SILENT",
-                LandingPane.Status.WARN, offset(c, -0.012, 0.008)));
+                false, offset(c, -0.012, 0.008)));
         nodes.add(new LandingPane.Item("RF-01 hill 212", "battery 81%  -  2 s ago", "ONLINE",
-                LandingPane.Status.OK, offset(c, 0.005, 0.010)));
+                false, offset(c, 0.005, 0.010)));
         nodes.add(new LandingPane.Item("EO-01 tower", "battery 64%  -  1 s ago", "ONLINE",
-                LandingPane.Status.OK, offset(c, -0.004, -0.006)));
+                false, offset(c, -0.004, -0.006)));
         landing.setItems(LandingPane.Category.NODES, nodes);
 
         List<LandingPane.Item> zones = new ArrayList<>();
         zones.add(new LandingPane.Item("Village", "1.2 km\u00b2  -  6 points", "NO-GO",
-                LandingPane.Status.BAD, offset(c, 0.015, 0.020)));
+                true, offset(c, 0.015, 0.020)));
         zones.add(new LandingPane.Item("Search area A", "4.8 km\u00b2  -  4 points", "OPS",
-                LandingPane.Status.OK, offset(c, -0.010, -0.020)));
+                false, offset(c, -0.010, -0.020)));
         landing.setItems(LandingPane.Category.ZONES, zones);
     }
 
@@ -256,7 +272,7 @@ public class LocalServicesPlugin implements IPlugin {
                     i == 0 ? "WP 1  (start)" : "WP " + (i + 1),
                     String.format(Locale.US, "%.5f, %.5f", p.getLat(), p.getLon()),
                     String.format(Locale.US, "+%.1f km  (%.1f)", leg / 1000, total / 1000),
-                    i == 0 ? LandingPane.Status.OK : LandingPane.Status.NONE,
+                    false,
                     point));
             previous = point;
         }

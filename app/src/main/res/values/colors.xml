@@ -5,10 +5,10 @@
     <color name="darker_gray">#121212</color>
     <color name="heading_yellow">#dfb228</color>
 
-    <!-- Row status bars on the landing pane (always paired with a status word) -->
-    <color name="status_ok">#17b219</color>
-    <color name="status_warn">#dfb228</color>
-    <color name="status_bad">#e0362c</color>
-    <color name="status_none">#585858</color>
+    <!-- Landing pane: one accent for "you are here", greys for everything else -->
+    <color name="accent">#4fc3f7</color>
+    <color name="pressed">#22ffffff</color>
+    <color name="text_secondary">#9a9a9a</color>
+    <color name="divider">#2c2c2c</color>
 
 </resources>

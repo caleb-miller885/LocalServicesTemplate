@@ -19,24 +19,26 @@
     <string name="coverage_remove">Remove from map</string>
     <string name="cancel">Cancel calculation</string>
 
-    <!-- Tabs -->
+    <!-- Toolbar (icon descriptions, shown on long-press) -->
     <string name="tab_picture">Picture</string>
     <string name="tab_services">Services</string>
+    <string name="tab_layers">Layers</string>
+    <string name="tab_alerts">Alerts</string>
+    <string name="tab_log">Log</string>
+    <string name="tab_settings">Settings</string>
+    <string name="placeholder_page">%1$s\n\nNothing here yet - add this page in LocalServicesPlugin.bindToolbar()</string>
 
-    <!-- Landing pane: %1$d = count, %2$d = how many need attention -->
-    <string name="seg_nodes">Nodes %1$d</string>
-    <string name="seg_nodes_alert">Nodes %1$d\n%2$d offline</string>
-    <string name="seg_waypoints">Waypoints %1$d</string>
-    <string name="seg_zones">Zones %1$d</string>
-    <string name="seg_zones_alert">Zones %1$d\n%2$d no-go</string>
-    <string name="caption_nodes">Active nodes - offline first. Tap to pan, swipe for waypoints</string>
-    <string name="caption_waypoints">Optimised route - in visit order. Tap to pan</string>
-    <string name="caption_zones">Drawn polygons - no-go zones first. Tap to pan</string>
+    <!-- Landing pane segments -->
+    <string name="seg_nodes">NODES</string>
+    <string name="seg_waypoints">WAYPOINTS</string>
+    <string name="seg_zones">ZONES</string>
+    <string name="attention_nodes">offline</string>
+    <string name="attention_zones">no-go</string>
+    <string name="caption_nodes">Offline first  \u00b7  tap to pan  \u00b7  swipe for more</string>
+    <string name="caption_waypoints">In visit order  \u00b7  tap to pan</string>
+    <string name="caption_zones">No-go first  \u00b7  tap to pan</string>
     <string name="empty_nodes">No nodes reporting yet</string>
-    <string name="empty_waypoints">No optimised route yet.\nRun 2. Optimise route on the Services tab</string>
+    <string name="empty_waypoints">No optimised route yet\nRun Optimise route on the Services page</string>
     <string name="empty_zones">No polygons drawn yet</string>
-
-
-
 
 </resources>

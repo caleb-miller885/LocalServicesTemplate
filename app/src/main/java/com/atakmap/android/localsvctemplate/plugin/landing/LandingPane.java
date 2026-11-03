@@ -1,12 +1,17 @@
 package com.atakmap.android.localsvctemplate.plugin.landing;
 
 import android.content.Context;
+import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
-import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -32,27 +37,25 @@ import java.util.Map;
  * duplicate-class problems inside ATAK.
  *
  * Callers sort each list (the most urgent first) and call {@link #setItems}; this class only shows
- * them. Tapping a row pans the map to it.
+ * them. Tapping a row pans the map to it. Items that need attention are shown by their status
+ * word (bold, white) and counted on their segment, not by colour.
  */
 public class LandingPane {
 
     public enum Category { NODES, WAYPOINTS, ZONES }
 
-    /** Drives the row's colour bar. Always pair it with a status word: colour alone isn't enough. */
-    public enum Status { OK, WARN, BAD, NONE }
-
     public static final class Item {
         final String title;
         final String detail;
         final String statusText;
-        final Status status;
-        final GeoPoint point;   // where tapping the row pans to; null = don't pan
+        final boolean attention;   // e.g. an offline node or a no-go zone
+        final GeoPoint point;      // where tapping the row pans to; null = don't pan
 
-        public Item(String title, String detail, String statusText, Status status, GeoPoint point) {
+        public Item(String title, String detail, String statusText, boolean attention, GeoPoint point) {
             this.title = title;
             this.detail = detail;
             this.statusText = statusText;
-            this.status = status;
+            this.attention = attention;
             this.point = point;
         }
     }
@@ -61,7 +64,7 @@ public class LandingPane {
 
     private final Context pluginContext;
     private final Map<Category, List<Item>> items = new EnumMap<>(Category.class);
-    private final Map<Category, Button> segments = new EnumMap<>(Category.class);
+    private final Map<Category, TextView> segments = new EnumMap<>(Category.class);
     private final ListView list;
     private final TextView empty;
     private final TextView caption;
@@ -76,7 +79,7 @@ public class LandingPane {
         segments.put(Category.NODES, root.findViewById(R.id.seg_nodes));
         segments.put(Category.WAYPOINTS, root.findViewById(R.id.seg_waypoints));
         segments.put(Category.ZONES, root.findViewById(R.id.seg_zones));
-        for (Map.Entry<Category, Button> e : segments.entrySet())
+        for (Map.Entry<Category, TextView> e : segments.entrySet())
             e.getValue().setOnClickListener(v -> show(e.getKey()));
 
         caption = root.findViewById(R.id.list_caption);
@@ -130,7 +133,7 @@ public class LandingPane {
     public void show(Category category) {
         int step = category.ordinal() - showing.ordinal();
         showing = category;
-        for (Map.Entry<Category, Button> e : segments.entrySet())
+        for (Map.Entry<Category, TextView> e : segments.entrySet())
             e.getValue().setSelected(e.getKey() == category);
         switch (category) {
             case NODES:
@@ -164,32 +167,30 @@ public class LandingPane {
             show(ORDER[next]);
     }
 
-    /** Segment labels: the count, plus a second line when something needs attention. */
+    /** Segment labels: a small grey name over the count, plus how many need attention. */
     private void refreshSegments() {
-        int nodes = items.get(Category.NODES).size();
-        int offline = countBad(Category.NODES);
-        segments.get(Category.NODES).setText(offline > 0
-                ? pluginContext.getString(R.string.seg_nodes_alert, nodes, offline)
-                : pluginContext.getString(R.string.seg_nodes, nodes));
-        segments.get(Category.NODES).setTextColor(pluginContext.getResources()
-                .getColor(offline > 0 ? R.color.status_bad : R.color.white));
-
-        segments.get(Category.WAYPOINTS).setText(pluginContext.getString(R.string.seg_waypoints,
-                items.get(Category.WAYPOINTS).size()));
-
-        int zones = items.get(Category.ZONES).size();
-        int noGo = countBad(Category.ZONES);
-        segments.get(Category.ZONES).setText(noGo > 0
-                ? pluginContext.getString(R.string.seg_zones_alert, zones, noGo)
-                : pluginContext.getString(R.string.seg_zones, zones));
+        setSegment(Category.NODES, R.string.seg_nodes, R.string.attention_nodes);
+        setSegment(Category.WAYPOINTS, R.string.seg_waypoints, 0);
+        setSegment(Category.ZONES, R.string.seg_zones, R.string.attention_zones);
     }
 
-    private int countBad(Category category) {
-        int n = 0;
+    private void setSegment(Category category, int name, int attentionWord) {
+        int attention = 0;
         for (Item i : items.get(category))
-            if (i.status == Status.BAD)
-                n++;
-        return n;
+            if (i.attention)
+                attention++;
+
+        SpannableStringBuilder label = new SpannableStringBuilder(pluginContext.getString(name));
+        label.setSpan(new RelativeSizeSpan(0.8f), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        label.setSpan(new ForegroundColorSpan(secondary()), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        label.append('\n');
+        int start = label.length();
+        label.append(String.valueOf(items.get(category).size()));
+        label.setSpan(new StyleSpan(Typeface.BOLD), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (attention > 0 && attentionWord != 0)
+            label.append("  \u00b7  ").append(String.valueOf(attention)).append(' ')
+                    .append(pluginContext.getString(attentionWord));
+        segments.get(category).setText(label);
     }
 
     private static void panTo(Item item) {
@@ -197,17 +198,8 @@ public class LandingPane {
             CameraController.Programmatic.panTo(MapView.getMapView().getRenderer3(), item.point, true);
     }
 
-    private int statusColor(Status s) {
-        switch (s) {
-            case OK:
-                return pluginContext.getResources().getColor(R.color.status_ok);
-            case WARN:
-                return pluginContext.getResources().getColor(R.color.status_warn);
-            case BAD:
-                return pluginContext.getResources().getColor(R.color.status_bad);
-            default:
-                return pluginContext.getResources().getColor(R.color.status_none);
-        }
+    private int secondary() {
+        return pluginContext.getResources().getColor(R.color.text_secondary);
     }
 
     private class RowAdapter extends BaseAdapter {
@@ -231,13 +223,13 @@ public class LandingPane {
             if (row == null)
                 row = PluginLayoutInflater.inflate(pluginContext, R.layout.landing_row, null);
             Item item = getItem(position);
-            int colour = statusColor(item.status);
-            row.findViewById(R.id.row_bar).setBackgroundColor(colour);
             ((TextView) row.findViewById(R.id.row_title)).setText(item.title);
             ((TextView) row.findViewById(R.id.row_detail)).setText(item.detail);
             TextView status = row.findViewById(R.id.row_status);
             status.setText(item.statusText);
-            status.setTextColor(colour);
+            status.setTextColor(item.attention
+                    ? pluginContext.getResources().getColor(R.color.white) : secondary());
+            status.setTypeface(null, item.attention ? Typeface.BOLD : Typeface.NORMAL);
             return row;
         }
     }

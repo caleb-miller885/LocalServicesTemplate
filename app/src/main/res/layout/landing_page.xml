@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Landing page: three lists behind one segment strip.
-    All three segments (with their counts) are always on screen, so the operator sees the whole
+    Picture page: three lists behind one segment strip.
+    All three segments, with their counts, are always on screen, so the operator sees the whole
     picture without opening anything. Tap a segment, or swipe the list left/right, to change list.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -14,27 +14,34 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal">
 
-        <Button
+        <TextView
             android:id="@+id/seg_nodes"
-            style="@style/segment" />
+            style="@style/listSegment" />
 
-        <Button
+        <TextView
             android:id="@+id/seg_waypoints"
-            style="@style/segment" />
+            style="@style/listSegment" />
 
-        <Button
+        <TextView
             android:id="@+id/seg_zones"
-            style="@style/segment" />
+            style="@style/listSegment" />
     </LinearLayout>
 
-    <!-- What the list is showing and how it's sorted, so a swipe never leaves the operator guessing -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
+
+    <!-- How the list is sorted and what a tap does -->
     <TextView
         android:id="@+id/list_caption"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:textColor="@color/heading_yellow" />
+        android:paddingLeft="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="2dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -45,6 +52,9 @@
             android:id="@+id/landing_list"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:divider="@color/divider"
+            android:dividerHeight="1dp"
+            android:listSelector="@color/pressed"
             android:fadeScrollbars="false" />
 
         <TextView
@@ -53,6 +63,7 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:padding="16dp"
-            android:textSize="16sp" />
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
     </FrameLayout>
 </LinearLayout>

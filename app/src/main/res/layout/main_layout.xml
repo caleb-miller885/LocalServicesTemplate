@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<!-- Tabs along the top; the Picture tab (landing_page.xml) is what the pane opens on -->
+<!-- Icon toolbar along the top, one page per icon; the Picture page (landing_page.xml) is what the
+     pane opens on. Long-press an icon for its name. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -13,16 +14,53 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal">
 
-        <Button
+        <ImageButton
             android:id="@+id/tab_picture"
-            style="@style/segment"
-            android:text="@string/tab_picture" />
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_picture"
+            android:src="@drawable/ic_tab_picture"
+            android:tooltipText="@string/tab_picture" />
 
-        <Button
+        <ImageButton
             android:id="@+id/tab_services"
-            style="@style/segment"
-            android:text="@string/tab_services" />
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_services"
+            android:src="@drawable/ic_tab_services"
+            android:tooltipText="@string/tab_services" />
+
+        <ImageButton
+            android:id="@+id/tab_layers"
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_layers"
+            android:src="@drawable/ic_tab_layers"
+            android:tooltipText="@string/tab_layers" />
+
+        <ImageButton
+            android:id="@+id/tab_alerts"
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_alerts"
+            android:src="@drawable/ic_tab_alerts"
+            android:tooltipText="@string/tab_alerts" />
+
+        <ImageButton
+            android:id="@+id/tab_log"
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_log"
+            android:src="@drawable/ic_tab_log"
+            android:tooltipText="@string/tab_log" />
+
+        <ImageButton
+            android:id="@+id/tab_settings"
+            style="@style/toolbarIcon"
+            android:contentDescription="@string/tab_settings"
+            android:src="@drawable/ic_tab_settings"
+            android:tooltipText="@string/tab_settings" />
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
 
     <include
         android:id="@+id/picture_page"
@@ -161,4 +199,15 @@
 
         </LinearLayout>
     </ScrollView>
+
+    <!-- Shared by the icons that don't have a page yet -->
+    <TextView
+        android:id="@+id/placeholder_page"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
 </LinearLayout>
