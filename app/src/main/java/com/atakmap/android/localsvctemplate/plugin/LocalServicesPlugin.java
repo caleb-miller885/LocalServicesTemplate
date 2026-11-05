@@ -15,6 +15,8 @@ import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
 import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.landing.LandingPane;
+import com.atakmap.android.localsvctemplate.plugin.zones.ZoneToolbar;
+import com.atakmap.android.localsvctemplate.plugin.zones.ZoneTools;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.maps.Marker;
 import com.atakmap.coremap.maps.coords.GeoBounds;
@@ -59,7 +61,12 @@ public class LocalServicesPlugin implements IPlugin {
     Context pluginContext;
     IHostUIService uiService;
     ToolbarItem toolbarItem;
+    ToolbarItem zonesToolbarItem;
     Pane templatePane;
+
+    // The exclusion / ops zone tools and the toolbar that holds them (zones/).
+    private ZoneTools zoneTools;
+    private ZoneToolbar zoneToolbar;
 
     private CheckBox localToggle;
     private EditText remoteAddress;
@@ -108,15 +115,36 @@ public class LocalServicesPlugin implements IPlugin {
                     }
                 }).setIdentifier(pluginContext.getPackageName())
                 .build();
+
+        // A second button: opens the zone toolbar, like ATAK's drawing button opens its toolbar.
+        zonesToolbarItem = new ToolbarItem.Builder(
+                pluginContext.getString(R.string.zone_toolbar),
+                MarshalManager.marshal(
+                        pluginContext.getResources().getDrawable(R.drawable.ic_zone_toolbar),
+                        android.graphics.drawable.Drawable.class,
+                        gov.tak.api.commons.graphics.Bitmap.class))
+                .setListener(new ToolbarItemAdapter() {
+                    @Override
+                    public void onClick(ToolbarItem item) {
+                        ZoneToolbar.toggle();
+                    }
+                }).setIdentifier(pluginContext.getPackageName() + ".zones")
+                .build();
     }
 
     @Override
     public void onStart() {
-        // the plugin is starting, add the button to the toolbar
+        zoneTools = new ZoneTools(pluginContext, MapView.getMapView());
+        zoneTools.onZonesChanged = this::showZones;
+        zoneTools.register();
+        zoneToolbar = new ZoneToolbar(pluginContext, MapView.getMapView(), zoneTools);
+
+        // the plugin is starting, add the buttons to the toolbar
         if (uiService == null)
             return;
 
         uiService.addToolbarItem(toolbarItem);
+        uiService.addToolbarItem(zonesToolbarItem);
     }
 
     @Override
@@ -129,12 +157,15 @@ public class LocalServicesPlugin implements IPlugin {
             channel = null;
         }
         removeCoverage();
+        zoneToolbar.dispose();
+        zoneTools.unregister();
 
-        // the plugin is stopping, remove the button from the toolbar
+        // the plugin is stopping, remove the buttons from the toolbar
         if (uiService == null)
             return;
 
         uiService.removeToolbarItem(toolbarItem);
+        uiService.removeToolbarItem(zonesToolbarItem);
     }
 
     private void showPane() {
@@ -154,6 +185,8 @@ public class LocalServicesPlugin implements IPlugin {
                     .build();
         }
 
+        showZones();   // picks up zones edited or deleted while the pane was closed
+
         // if the plugin pane is not visible, show it!
         if (!uiService.isPaneVisible(templatePane)) {
             uiService.showPane(templatePane, null);
@@ -165,7 +198,8 @@ public class LocalServicesPlugin implements IPlugin {
     private void bindViews(View view) {
         bindToolbar(view);
         landing = new LandingPane(pluginContext, view.findViewById(R.id.picture_page));
-        showSampleNodesAndZones();
+        view.findViewById(R.id.btn_draw_zones).setOnClickListener(v -> ZoneToolbar.open());
+        showSampleNodes();
 
         localToggle = view.findViewById(R.id.local_toggle);
         remoteAddress = view.findViewById(R.id.remote_address);
@@ -233,11 +267,10 @@ public class LocalServicesPlugin implements IPlugin {
     // ---- landing page lists ----------------------------------------------------------------
 
     /**
-     * Made-up nodes and zones near the map centre, so the landing page has something to show.
-     * Replace with the real sources (node health feed, drawn shapes on the map) - each list is
-     * sorted most urgent first before it goes in.
+     * Made-up nodes near the map centre, so the landing page has something to show. Replace
+     * with the real node health feed - sorted most urgent first before it goes in.
      */
-    private void showSampleNodesAndZones() {
+    private void showSampleNodes() {
         GeoPoint c = MapView.getMapView().getCenterPoint().get();
         List<LandingPane.Item> nodes = new ArrayList<>();
         nodes.add(new LandingPane.Item("RF-03 ridge", "last heard 4 min ago", "OFFLINE",
@@ -249,13 +282,34 @@ public class LocalServicesPlugin implements IPlugin {
         nodes.add(new LandingPane.Item("EO-01 tower", "battery 64%  -  1 s ago", "ONLINE",
                 false, offset(c, -0.004, -0.006)));
         landing.setItems(LandingPane.Category.NODES, nodes);
+    }
 
+    /** The zones drawn with the zone toolbar, exclusion zones first. */
+    private void showZones() {
+        if (landing == null)
+            return;   // pane not built yet; showPane() calls this once it is
         List<LandingPane.Item> zones = new ArrayList<>();
-        zones.add(new LandingPane.Item("Village", "1.2 km\u00b2  -  6 points", "NO-GO",
-                true, offset(c, 0.015, 0.020)));
-        zones.add(new LandingPane.Item("Search area A", "4.8 km\u00b2  -  4 points", "OPS",
-                false, offset(c, -0.010, -0.020)));
+        for (ZoneTools.Zone z : zoneTools.zones()) {
+            GeoPoint[] points = z.shape.getPoints();
+            boolean exclusion = z.type == ZoneTools.Type.EXCLUSION;
+            zones.add(new LandingPane.Item(z.shape.getTitle(),
+                    String.format(Locale.US, "%.2f km\u00b2  -  %d points", areaKm2(points), points.length),
+                    exclusion ? "NO-GO" : "OPS", exclusion, z.shape.getCenter().get()));
+        }
         landing.setItems(LandingPane.Category.ZONES, zones);
+    }
+
+    /** Polygon area, flat-earth: close enough for zones a few km across. */
+    private static double areaKm2(GeoPoint[] p) {
+        if (p.length < 3)
+            return 0;
+        double kmPerDegLat = 111.32;
+        double kmPerDegLon = kmPerDegLat * Math.cos(Math.toRadians(p[0].getLatitude()));
+        double twice = 0;
+        for (int i = 0, j = p.length - 1; i < p.length; j = i++)
+            twice += (p[j].getLongitude() * kmPerDegLon) * (p[i].getLatitude() * kmPerDegLat)
+                    - (p[i].getLongitude() * kmPerDegLon) * (p[j].getLatitude() * kmPerDegLat);
+        return Math.abs(twice) / 2;
     }
 
     /** The optimised route from 2., in visiting order, with leg and running distance. */

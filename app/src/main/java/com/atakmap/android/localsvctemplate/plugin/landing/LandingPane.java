@@ -68,6 +68,7 @@ public class LandingPane {
     private final ListView list;
     private final TextView empty;
     private final TextView caption;
+    private final View drawZones;
     private final RowAdapter adapter = new RowAdapter();
     private Category showing = Category.NODES;
 
@@ -83,6 +84,7 @@ public class LandingPane {
             e.getValue().setOnClickListener(v -> show(e.getKey()));
 
         caption = root.findViewById(R.id.list_caption);
+        drawZones = root.findViewById(R.id.btn_draw_zones);
         empty = root.findViewById(R.id.landing_empty);
         list = root.findViewById(R.id.landing_list);
         list.setAdapter(adapter);
@@ -135,6 +137,7 @@ public class LandingPane {
         showing = category;
         for (Map.Entry<Category, TextView> e : segments.entrySet())
             e.getValue().setSelected(e.getKey() == category);
+        drawZones.setVisibility(category == Category.ZONES ? View.VISIBLE : View.GONE);
         switch (category) {
             case NODES:
                 caption.setText(R.string.caption_nodes);

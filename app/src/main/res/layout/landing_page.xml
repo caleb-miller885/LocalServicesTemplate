@@ -66,4 +66,16 @@
             android:textColor="@color/text_secondary"
             android:textSize="14sp" />
     </FrameLayout>
+
+    <!-- Only under the Zones list: opens the zone toolbar on the map -->
+    <Button
+        android:id="@+id/btn_draw_zones"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_margin="6dp"
+        android:background="@drawable/new_dark_button_bg"
+        android:text="@string/draw_zones"
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        android:visibility="gone" />
 </LinearLayout>
