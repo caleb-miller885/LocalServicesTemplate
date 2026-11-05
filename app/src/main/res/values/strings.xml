@@ -46,7 +46,7 @@
     <string name="draw_zones">Draw zones</string>
     <string name="zone_exclusion">Draw exclusion zone</string>
     <string name="zone_ops">Draw area of operations</string>
-    <string name="zone_undo">Undo last point</string>
-    <string name="zone_done">Finish zone</string>
+    <string name="zone_undo">Undo</string>
+    <string name="zone_done">End Shape</string>
 
 </resources>

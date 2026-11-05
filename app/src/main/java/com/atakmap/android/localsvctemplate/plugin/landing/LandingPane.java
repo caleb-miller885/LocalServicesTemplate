@@ -202,7 +202,7 @@ public class LandingPane {
     }
 
     private int secondary() {
-        return pluginContext.getResources().getColor(R.color.text_secondary);
+        return pluginContext.getColor(R.color.text_secondary);
     }
 
     private class RowAdapter extends BaseAdapter {
@@ -231,7 +231,7 @@ public class LandingPane {
             TextView status = row.findViewById(R.id.row_status);
             status.setText(item.statusText);
             status.setTextColor(item.attention
-                    ? pluginContext.getResources().getColor(R.color.white) : secondary());
+                    ? pluginContext.getColor(R.color.white) : secondary());
             status.setTypeface(null, item.attention ? Typeface.BOLD : Typeface.NORMAL);
             return row;
         }

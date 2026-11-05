@@ -16,8 +16,13 @@ import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
 import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.landing.LandingPane;
 import com.atakmap.android.localsvctemplate.plugin.zones.ZoneToolbar;
-import com.atakmap.android.localsvctemplate.plugin.zones.ZoneTools;
+import com.atakmap.android.localsvctemplate.plugin.zones.AoZoneTool;
+import com.atakmap.android.localsvctemplate.plugin.zones.ExclusionZoneTool;
+import com.atakmap.android.maps.MapEvent;
+import com.atakmap.android.maps.MapEventDispatcher;
+import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
+import com.atakmap.android.maps.Shape;
 import com.atakmap.android.maps.Marker;
 import com.atakmap.coremap.maps.coords.GeoBounds;
 import com.atakmap.coremap.maps.coords.GeoPoint;
@@ -64,9 +69,18 @@ public class LocalServicesPlugin implements IPlugin {
     ToolbarItem zonesToolbarItem;
     Pane templatePane;
 
-    // The exclusion / ops zone tools and the toolbar that holds them (zones/).
-    private ZoneTools zoneTools;
+    // The two zone tools and the toolbar that holds them (zones/).
+    private ExclusionZoneTool exclusionTool;
+    private AoZoneTool aoTool;
     private ZoneToolbar zoneToolbar;
+
+    // The zone tools refresh a shape when they've tagged it; deleting one fires ITEM_REMOVED.
+    private final MapEventDispatcher.MapEventDispatchListener zoneListener = event -> {
+        MapItem item = event.getItem();
+        if (item != null && (item.hasMetaValue(ExclusionZoneTool.KEY_IS_EXCLUSION)
+                || item.hasMetaValue(AoZoneTool.KEY_IS_AO)))
+            showZones();
+    };
 
     private CheckBox localToggle;
     private EditText remoteAddress;
@@ -105,7 +119,7 @@ public class LocalServicesPlugin implements IPlugin {
         toolbarItem = new ToolbarItem.Builder(
                 pluginContext.getString(R.string.app_name),
                 MarshalManager.marshal(
-                        pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
+                        pluginContext.getDrawable(R.drawable.ic_launcher),
                         android.graphics.drawable.Drawable.class,
                         gov.tak.api.commons.graphics.Bitmap.class))
                 .setListener(new ToolbarItemAdapter() {
@@ -120,7 +134,7 @@ public class LocalServicesPlugin implements IPlugin {
         zonesToolbarItem = new ToolbarItem.Builder(
                 pluginContext.getString(R.string.zone_toolbar),
                 MarshalManager.marshal(
-                        pluginContext.getResources().getDrawable(R.drawable.ic_zone_toolbar),
+                        pluginContext.getDrawable(R.drawable.ic_zone_toolbar),
                         android.graphics.drawable.Drawable.class,
                         gov.tak.api.commons.graphics.Bitmap.class))
                 .setListener(new ToolbarItemAdapter() {
@@ -134,10 +148,14 @@ public class LocalServicesPlugin implements IPlugin {
 
     @Override
     public void onStart() {
-        zoneTools = new ZoneTools(pluginContext, MapView.getMapView());
-        zoneTools.onZonesChanged = this::showZones;
-        zoneTools.register();
-        zoneToolbar = new ZoneToolbar(pluginContext, MapView.getMapView(), zoneTools);
+        MapView mv = MapView.getMapView();
+        exclusionTool = new ExclusionZoneTool(mv);
+        exclusionTool.register();
+        aoTool = new AoZoneTool(mv);
+        aoTool.register();
+        zoneToolbar = new ZoneToolbar(pluginContext, mv, exclusionTool, aoTool);
+        mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
+        mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
 
         // the plugin is starting, add the buttons to the toolbar
         if (uiService == null)
@@ -157,8 +175,12 @@ public class LocalServicesPlugin implements IPlugin {
             channel = null;
         }
         removeCoverage();
+        MapView mv = MapView.getMapView();
+        mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
+        mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
         zoneToolbar.dispose();
-        zoneTools.unregister();
+        exclusionTool.unregister();
+        aoTool.unregister();
 
         // the plugin is stopping, remove the buttons from the toolbar
         if (uiService == null)
@@ -289,14 +311,21 @@ public class LocalServicesPlugin implements IPlugin {
         if (landing == null)
             return;   // pane not built yet; showPane() calls this once it is
         List<LandingPane.Item> zones = new ArrayList<>();
-        for (ZoneTools.Zone z : zoneTools.zones()) {
-            GeoPoint[] points = z.shape.getPoints();
-            boolean exclusion = z.type == ZoneTools.Type.EXCLUSION;
-            zones.add(new LandingPane.Item(z.shape.getTitle(),
-                    String.format(Locale.US, "%.2f km\u00b2  -  %d points", areaKm2(points), points.length),
-                    exclusion ? "NO-GO" : "OPS", exclusion, z.shape.getCenter().get()));
-        }
+        addZones(zones, ExclusionZoneTool.KEY_IS_EXCLUSION, "NO-GO", true);
+        addZones(zones, AoZoneTool.KEY_IS_AO, "AO", false);
         landing.setItems(LandingPane.Category.ZONES, zones);
+    }
+
+    private void addZones(List<LandingPane.Item> zones, String key, String status, boolean attention) {
+        for (MapItem item : MapView.getMapView().getRootGroup().deepFindItems(key, "true")) {
+            if (!(item instanceof Shape))
+                continue;
+            Shape shape = (Shape) item;
+            GeoPoint[] points = shape.getPoints();
+            zones.add(new LandingPane.Item(shape.getTitle(),
+                    String.format(Locale.US, "%.2f km\u00b2  -  %d points", areaKm2(points), points.length),
+                    status, attention, shape.getCenter().get()));
+        }
     }
 
     /** Polygon area, flat-earth: close enough for zones a few km across. */
