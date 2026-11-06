@@ -12,6 +12,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -22,9 +24,13 @@ import com.atakmap.coremap.maps.coords.GeoPoint;
 import com.atakmap.map.CameraController;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * The landing page: nodes, optimised waypoints and drawn zones in one list, switched by a
@@ -57,6 +63,40 @@ public class LandingPane {
             this.statusText = statusText;
             this.attention = attention;
             this.point = point;
+            this.id = null;
+            this.checks = Collections.emptyList();
+        }
+
+        /**
+         * A row with a tick-box list under it (opened with the chevron). {@code id} keeps it open
+         * across {@link #setItems} calls, so ticking a box - which rebuilds the list - doesn't
+         * close it.
+         */
+        public Item(String id, String title, String detail, String statusText, boolean attention,
+                GeoPoint point, List<Check> checks) {
+            this.title = title;
+            this.detail = detail;
+            this.statusText = statusText;
+            this.attention = attention;
+            this.point = point;
+            this.id = id;
+            this.checks = checks;
+        }
+
+        final String id;
+        final List<Check> checks;
+    }
+
+    /** One tick box under a row; {@code onChange} gets the new state. */
+    public static final class Check {
+        final String label;
+        final boolean checked;
+        final Consumer<Boolean> onChange;
+
+        public Check(String label, boolean checked, Consumer<Boolean> onChange) {
+            this.label = label;
+            this.checked = checked;
+            this.onChange = onChange;
         }
     }
 
@@ -70,6 +110,7 @@ public class LandingPane {
     private final TextView caption;
     private final View drawZones;
     private final RowAdapter adapter = new RowAdapter();
+    private final Set<String> expanded = new HashSet<>();   // ids of rows with their list open
     private Category showing = Category.NODES;
 
     public LandingPane(Context pluginContext, View root) {
@@ -233,7 +274,49 @@ public class LandingPane {
             status.setTextColor(item.attention
                     ? pluginContext.getColor(R.color.white) : secondary());
             status.setTypeface(null, item.attention ? Typeface.BOLD : Typeface.NORMAL);
+            bindChecks(row, item);
             return row;
+        }
+
+        private void bindChecks(View row, Item item) {
+            TextView chevron = row.findViewById(R.id.row_expand);
+            LinearLayout box = row.findViewById(R.id.row_checks);
+            if (item.id == null) {
+                chevron.setVisibility(View.GONE);
+                box.setVisibility(View.GONE);
+                return;
+            }
+            boolean open = expanded.contains(item.id);
+            chevron.setVisibility(View.VISIBLE);
+            chevron.setText(open ? "\u25B4" : "\u25BE");   // up / down triangle
+            chevron.setOnClickListener(v -> {
+                if (!expanded.remove(item.id))
+                    expanded.add(item.id);
+                notifyDataSetChanged();
+            });
+
+            box.removeAllViews();
+            box.setVisibility(open ? View.VISIBLE : View.GONE);
+            if (!open)
+                return;
+            if (item.checks.isEmpty()) {
+                TextView none = new TextView(pluginContext);
+                none.setText(R.string.empty_nodes);
+                none.setTextColor(secondary());
+                none.setPadding(0, 12, 0, 12);
+                box.addView(none);
+            }
+            for (Check c : item.checks) {
+                CheckBox cb = new CheckBox(pluginContext);
+                cb.setText(c.label);
+                cb.setTextColor(pluginContext.getColor(R.color.white));
+                cb.setTextSize(14);
+                cb.setMinHeight(Math.round(44 * pluginContext.getResources().getDisplayMetrics().density));
+                cb.setFocusable(false);
+                cb.setChecked(c.checked);   // before the listener, so it doesn't fire
+                cb.setOnCheckedChangeListener((b, isChecked) -> c.onChange.accept(isChecked));
+                box.addView(cb);
+            }
         }
     }
 }

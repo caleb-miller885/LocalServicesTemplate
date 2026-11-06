@@ -15,11 +15,16 @@ import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
 import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.landing.LandingPane;
+import com.atakmap.android.localsvctemplate.plugin.model.DetailsProvider;
+import com.atakmap.android.localsvctemplate.plugin.model.NodeDto;
+import com.atakmap.android.localsvctemplate.plugin.model.Registry;
+import com.atakmap.android.localsvctemplate.plugin.model.ZoneDto;
 import com.atakmap.android.localsvctemplate.plugin.zones.ZoneToolbar;
 import com.atakmap.android.localsvctemplate.plugin.zones.AoZoneTool;
 import com.atakmap.android.localsvctemplate.plugin.zones.ExclusionZoneTool;
 import com.atakmap.android.maps.MapEvent;
 import com.atakmap.android.maps.MapEventDispatcher;
+import com.atakmap.android.maps.MapGroup;
 import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.maps.Shape;
@@ -74,12 +79,28 @@ public class LocalServicesPlugin implements IPlugin {
     private AoZoneTool aoTool;
     private ZoneToolbar zoneToolbar;
 
-    // The zone tools refresh a shape when they've tagged it; deleting one fires ITEM_REMOVED.
+    // Every node and zone (model/), the details-page section that shows them, and the map group
+    // the demo node markers live in.
+    private final Registry registry = new Registry();
+    private DetailsProvider detailsProvider;
+    private MapGroup nodeGroup;
+
+    // The zone tools refresh a shape when they've tagged it, so ITEM_REFRESH adds (or updates) a
+    // zone; deleting a node or zone fires ITEM_REMOVED. The registry ignores items that aren't ours.
     private final MapEventDispatcher.MapEventDispatchListener zoneListener = event -> {
         MapItem item = event.getItem();
-        if (item != null && (item.hasMetaValue(ExclusionZoneTool.KEY_IS_EXCLUSION)
-                || item.hasMetaValue(AoZoneTool.KEY_IS_AO)))
-            showZones();
+        if (item == null)
+            return;
+        if (MapEvent.ITEM_REMOVED.equals(event.getType()))
+            registry.remove(item.getUID());
+        else
+            putZone(item);
+    };
+
+    // Anything that changes the registry redraws the landing pane's lists.
+    private final Registry.Listener registryListener = () -> {
+        showNodes();
+        showZones();
     };
 
     private CheckBox localToggle;
@@ -157,6 +178,14 @@ public class LocalServicesPlugin implements IPlugin {
         mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
         mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
 
+        // zones saved from an earlier session are already on the map
+        for (String key : new String[] { ExclusionZoneTool.KEY_IS_EXCLUSION, AoZoneTool.KEY_IS_AO })
+            for (MapItem item : mv.getRootGroup().deepFindItems(key, "true"))
+                putZone(item);
+        registry.addListener(registryListener);
+        detailsProvider = new DetailsProvider(mv.getContext(), registry);
+        detailsProvider.register();
+
         // the plugin is starting, add the buttons to the toolbar
         if (uiService == null)
             return;
@@ -178,6 +207,13 @@ public class LocalServicesPlugin implements IPlugin {
         MapView mv = MapView.getMapView();
         mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
         mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
+        detailsProvider.unregister();
+        registry.removeListener(registryListener);
+        if (nodeGroup != null) {
+            mv.getRootGroup().removeGroup(nodeGroup);
+            nodeGroup = null;
+        }
+        registry.clear();
         zoneToolbar.dispose();
         exclusionTool.unregister();
         aoTool.unregister();
@@ -221,7 +257,8 @@ public class LocalServicesPlugin implements IPlugin {
         bindToolbar(view);
         landing = new LandingPane(pluginContext, view.findViewById(R.id.picture_page));
         view.findViewById(R.id.btn_draw_zones).setOnClickListener(v -> ZoneToolbar.open());
-        showSampleNodes();
+        addSampleNodes();
+        showNodes();
 
         localToggle = view.findViewById(R.id.local_toggle);
         remoteAddress = view.findViewById(R.id.remote_address);
@@ -289,43 +326,74 @@ public class LocalServicesPlugin implements IPlugin {
     // ---- landing page lists ----------------------------------------------------------------
 
     /**
-     * Made-up nodes near the map centre, so the landing page has something to show. Replace
-     * with the real node health feed - sorted most urgent first before it goes in.
+     * Made-up nodes near the map centre, as real markers so each has an ATAK details page. Replace
+     * with the real node feed: make (or find) the marker, wrap it in a NodeDto, registry.putNode().
      */
-    private void showSampleNodes() {
-        GeoPoint c = MapView.getMapView().getCenterPoint().get();
-        List<LandingPane.Item> nodes = new ArrayList<>();
-        nodes.add(new LandingPane.Item("RF-03 ridge", "last heard 4 min ago", "OFFLINE",
-                true, offset(c, 0.020, -0.015)));
-        nodes.add(new LandingPane.Item("AC-02 culvert", "EMCON until 14:30Z", "SILENT",
-                false, offset(c, -0.012, 0.008)));
-        nodes.add(new LandingPane.Item("RF-01 hill 212", "battery 81%  -  2 s ago", "ONLINE",
-                false, offset(c, 0.005, 0.010)));
-        nodes.add(new LandingPane.Item("EO-01 tower", "battery 64%  -  1 s ago", "ONLINE",
-                false, offset(c, -0.004, -0.006)));
-        landing.setItems(LandingPane.Category.NODES, nodes);
+    private void addSampleNodes() {
+        MapView mv = MapView.getMapView();
+        nodeGroup = mv.getRootGroup().addGroup("Nodes");
+        GeoPoint c = mv.getCenterPoint().get();
+        addNode("RF-03 ridge", offset(c, 0.020, -0.015), "OFFLINE", "Relay kit A");
+        addNode("AC-02 culvert", offset(c, -0.012, 0.008), "SILENT", "Acoustic picket");
+        addNode("RF-01 hill 212", offset(c, 0.005, 0.010), "ONLINE", "Relay kit B");
+        addNode("EO-01 tower", offset(c, -0.004, -0.006), "ONLINE", "EO mast");
     }
 
-    /** The zones drawn with the zone toolbar, exclusion zones first. */
+    private void addNode(String name, GeoPoint point, String status, String profile) {
+        Marker m = new Marker(point, "localsvctemplate.node." + name.replace(' ', '-'));
+        m.setType("a-f-G-U-C");
+        m.setTitle(name);
+        m.setMetaString("callsign", name);
+        nodeGroup.addItem(m);
+        registry.putNode(new NodeDto(m, profile, status));
+    }
+
+    /** Wraps an AO / exclusion shape in a ZoneDto; ignores everything else. */
+    private void putZone(MapItem item) {
+        if (!(item instanceof Shape))
+            return;
+        if (item.hasMetaValue(AoZoneTool.KEY_IS_AO))
+            registry.putZone((Shape) item, ZoneDto.Kind.AO);
+        else if (item.hasMetaValue(ExclusionZoneTool.KEY_IS_EXCLUSION))
+            registry.putZone((Shape) item, ZoneDto.Kind.EXCLUSION);
+    }
+
+    /** The landing pane's node list, rendered from the NodeDtos, offline first. */
+    private void showNodes() {
+        if (landing == null)
+            return;
+        List<LandingPane.Item> rows = new ArrayList<>();
+        for (NodeDto n : registry.nodes()) {
+            boolean offline = "OFFLINE".equals(n.status);
+            LandingPane.Item row = new LandingPane.Item(n.callsign(), n.profile,
+                    n.status, offline, n.marker.getPoint());
+            if (offline) rows.add(0, row); else rows.add(row);
+        }
+        landing.setItems(LandingPane.Category.NODES, rows);
+    }
+
+    /**
+     * The zones, from the ZoneDtos, exclusion zones first. Each opens into every node with a tick
+     * box; ticking one assigns it, which redraws this list and any open details page.
+     */
     private void showZones() {
         if (landing == null)
             return;   // pane not built yet; showPane() calls this once it is
-        List<LandingPane.Item> zones = new ArrayList<>();
-        addZones(zones, ExclusionZoneTool.KEY_IS_EXCLUSION, "NO-GO", true);
-        addZones(zones, AoZoneTool.KEY_IS_AO, "AO", false);
-        landing.setItems(LandingPane.Category.ZONES, zones);
-    }
-
-    private void addZones(List<LandingPane.Item> zones, String key, String status, boolean attention) {
-        for (MapItem item : MapView.getMapView().getRootGroup().deepFindItems(key, "true")) {
-            if (!(item instanceof Shape))
-                continue;
-            Shape shape = (Shape) item;
-            GeoPoint[] points = shape.getPoints();
-            zones.add(new LandingPane.Item(shape.getTitle(),
-                    String.format(Locale.US, "%.2f km\u00b2  -  %d points", areaKm2(points), points.length),
-                    status, attention, shape.getCenter().get()));
+        List<LandingPane.Item> rows = new ArrayList<>();
+        for (ZoneDto z : registry.zones()) {
+            boolean ex = z.kind == ZoneDto.Kind.EXCLUSION;
+            GeoPoint[] points = z.shape.getPoints();
+            List<LandingPane.Check> checks = new ArrayList<>();
+            for (NodeDto n : registry.nodes())
+                checks.add(new LandingPane.Check(n.callsign(), z.nodes.contains(n),
+                        on -> registry.assign(z, n, on)));
+            LandingPane.Item row = new LandingPane.Item(z.uid(), z.shape.getTitle(),
+                    String.format(Locale.US, "%d of %d nodes  -  %.2f km\u00b2",
+                            z.nodes.size(), checks.size(), areaKm2(points)),
+                    ex ? "NO-GO" : "AO", ex, z.shape.getCenter().get(), checks);
+            if (ex) rows.add(0, row); else rows.add(row);
         }
+        landing.setItems(LandingPane.Category.ZONES, rows);
     }
 
     /** Polygon area, flat-earth: close enough for zones a few km across. */
