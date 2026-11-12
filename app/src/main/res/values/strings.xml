@@ -13,6 +13,7 @@
     <string name="calc_examples">Calculation examples</string>
     <string name="range_bearing">1. Range/bearing: self to map centre (request, answer)</string>
     <string name="optimise_route">2. Optimise route (progress, then result)</string>
+    <string name="coverage_dialog">Coverage dialog (all nodes)</string>
     <string name="render_heatmap">3. Coverage map around map centre (progress, then the image on the map)</string>
     <string name="coverage_opacity">Coverage opacity</string>
     <string name="coverage_share">Share (data package)</string>

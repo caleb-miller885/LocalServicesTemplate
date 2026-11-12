@@ -11,6 +11,7 @@ import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageDialog;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
 import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
@@ -269,6 +270,8 @@ public class LocalServicesPlugin implements IPlugin {
         view.findViewById(R.id.btn_range).setOnClickListener(v -> rangeBearing());
         view.findViewById(R.id.btn_optimise).setOnClickListener(v -> optimiseRoute());
         view.findViewById(R.id.btn_render).setOnClickListener(v -> renderHeatmap());
+        view.findViewById(R.id.btn_coverage_dialog).setOnClickListener(v ->
+                CoverageDialog.show(MapView.getMapView(), new ArrayList<>(registry.nodes())));
         view.findViewById(R.id.btn_cancel).setOnClickListener(v -> cancelRunning());
 
         view.findViewById(R.id.btn_share).setOnClickListener(v -> shareCoverage());
