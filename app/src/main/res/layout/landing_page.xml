@@ -43,29 +43,32 @@
         android:textColor="@color/text_secondary"
         android:textSize="11sp" />
 
-    <FrameLayout
+    <!-- The rows of the list showing: LandingPane adds each item's own row view here -->
+    <com.atakmap.android.localsvctemplate.plugin.landing.SwipeScrollView
+        android:id="@+id/landing_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:fadeScrollbars="false">
 
-        <ListView
+        <LinearLayout
             android:id="@+id/landing_list"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:divider="@color/divider"
-            android:dividerHeight="1dp"
-            android:listSelector="@color/pressed"
-            android:fadeScrollbars="false" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </com.atakmap.android.localsvctemplate.plugin.landing.SwipeScrollView>
 
-        <TextView
-            android:id="@+id/landing_empty"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:padding="16dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
-    </FrameLayout>
+    <!-- Shown in place of the list when it has no rows -->
+    <TextView
+        android:id="@+id/landing_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:visibility="gone" />
 
     <!-- Only under the Zones list: opens the zone toolbar on the map -->
     <Button

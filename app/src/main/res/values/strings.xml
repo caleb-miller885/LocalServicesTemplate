@@ -32,9 +32,9 @@
     <string name="seg_zones">ZONES</string>
     <string name="attention_nodes">offline</string>
     <string name="attention_zones">no-go</string>
-    <string name="caption_nodes">Offline first  \u00b7  tap to pan  \u00b7  swipe for more</string>
+    <string name="caption_nodes">Tick to assign to the next area  \u00b7  tap to pan  \u00b7  swipe for more</string>
     <string name="caption_waypoints">In visit order  \u00b7  tap to pan</string>
-    <string name="caption_zones">No-go first  \u00b7  tap to pan</string>
+    <string name="caption_zones">Open a zone to assign nodes  \u00b7  tap to pan</string>
     <string name="empty_nodes">No nodes reporting yet</string>
     <string name="empty_waypoints">No optimised route yet\nRun Optimise route on the Services page</string>
     <string name="empty_zones">No zones drawn yet\nTap Draw zones below</string>

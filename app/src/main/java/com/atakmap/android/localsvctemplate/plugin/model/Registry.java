@@ -64,6 +64,11 @@ public class Registry {
         return zones.get(uid);
     }
 
+    /** True if the UID is a node, waypoint or zone here. */
+    public boolean contains(String uid) {
+        return nodes.containsKey(uid) || waypoints.containsKey(uid) || zones.containsKey(uid);
+    }
+
     /**
      * A map item was added or refreshed: files it as a node, waypoint or zone by its flags, or
      * ignores it. A refresh of a known item keeps its state (a node's tick, a zone's nodes).
