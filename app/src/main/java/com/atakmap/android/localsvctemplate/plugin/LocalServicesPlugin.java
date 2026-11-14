@@ -6,19 +6,17 @@ import android.view.View;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ProgressBar;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageDialog;
-import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageLayer;
-import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageShare;
-import com.atakmap.android.localsvctemplate.plugin.coverage.GLCoverageLayer;
+import com.atakmap.android.localsvctemplate.plugin.coverage.CoverageMap;
 import com.atakmap.android.localsvctemplate.plugin.landing.LandingPane;
 import com.atakmap.android.localsvctemplate.plugin.model.DetailsProvider;
 import com.atakmap.android.localsvctemplate.plugin.model.NodeDto;
 import com.atakmap.android.localsvctemplate.plugin.model.Registry;
+import com.atakmap.android.localsvctemplate.plugin.model.WaypointDto;
 import com.atakmap.android.localsvctemplate.plugin.model.ZoneDto;
 import com.atakmap.android.localsvctemplate.plugin.zones.ZoneToolbar;
 import com.atakmap.android.localsvctemplate.plugin.zones.AoZoneTool;
@@ -28,11 +26,9 @@ import com.atakmap.android.maps.MapEventDispatcher;
 import com.atakmap.android.maps.MapGroup;
 import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
-import com.atakmap.android.maps.Shape;
 import com.atakmap.android.maps.Marker;
 import com.atakmap.coremap.maps.coords.GeoBounds;
 import com.atakmap.coremap.maps.coords.GeoPoint;
-import com.atakmap.map.layer.opengl.GLLayerFactory;
 import com.example.calc.proto.CalcGrpc;
 import com.example.calc.proto.HeatmapImage;
 import com.example.calc.proto.LatLon;
@@ -45,11 +41,11 @@ import com.example.calc.proto.RangeBearingResult;
 import com.example.calc.proto.RenderHeatmapRequest;
 import com.example.calc.proto.RenderHeatmapUpdate;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import gov.tak.api.plugin.IPlugin;
@@ -80,27 +76,33 @@ public class LocalServicesPlugin implements IPlugin {
     private AoZoneTool aoTool;
     private ZoneToolbar zoneToolbar;
 
-    // Every node and zone (model/), the details-page section that shows them, and the map group
-    // the demo node markers live in.
+    // Every node, waypoint and zone (model/), the details-page section that shows them, and the
+    // map groups the demo nodes and the route's waypoints live in.
     private final Registry registry = new Registry();
     private DetailsProvider detailsProvider;
     private MapGroup nodeGroup;
+    private MapGroup waypointGroup;
 
-    // The zone tools refresh a shape when they've tagged it, so ITEM_REFRESH adds (or updates) a
-    // zone; deleting a node or zone fires ITEM_REMOVED. The registry ignores items that aren't ours.
-    private final MapEventDispatcher.MapEventDispatchListener zoneListener = event -> {
+    // One listener feeds the registry. A node, waypoint or zone is recognised by its flag
+    // (NodeDto.KEY_IS_NODE, WaypointDto.KEY_IS_WAYPOINT, the zone tools' keys); anything else is
+    // ignored. The zone tools tag a shape and then refresh it, so ITEM_REFRESH is what files a new
+    // zone; a node feed that changes a marker's status refreshes it the same way.
+    private static final String[] ITEM_EVENTS = {
+            MapEvent.ITEM_ADDED, MapEvent.ITEM_REFRESH, MapEvent.ITEM_REMOVED };
+    private final MapEventDispatcher.MapEventDispatchListener itemListener = event -> {
         MapItem item = event.getItem();
         if (item == null)
             return;
         if (MapEvent.ITEM_REMOVED.equals(event.getType()))
             registry.remove(item.getUID());
         else
-            putZone(item);
+            registry.onItem(item);
     };
 
     // Anything that changes the registry redraws the landing pane's lists.
     private final Registry.Listener registryListener = () -> {
         showNodes();
+        showWaypoints();
         showZones();
     };
 
@@ -108,11 +110,10 @@ public class LocalServicesPlugin implements IPlugin {
     private EditText remoteAddress;
     private TextView output;
     private ProgressBar progressBar;
-    private View coverageControls;
     private LandingPane landing;
 
     // The image from 3., drawn on the map (null until the first result).
-    private CoverageLayer coverage;
+    private CoverageMap coverage;   // the one coverage map on the map, with its dBm scale
 
     // The current connection, and which address it is for ("local" or "host:port").
     private ManagedChannel channel;
@@ -176,13 +177,14 @@ public class LocalServicesPlugin implements IPlugin {
         aoTool = new AoZoneTool(mv);
         aoTool.register();
         zoneToolbar = new ZoneToolbar(pluginContext, mv, exclusionTool, aoTool);
-        mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
-        mv.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
+        for (String type : ITEM_EVENTS)
+            mv.getMapEventDispatcher().addMapEventListener(type, itemListener);
 
-        // zones saved from an earlier session are already on the map
-        for (String key : new String[] { ExclusionZoneTool.KEY_IS_EXCLUSION, AoZoneTool.KEY_IS_AO })
+        // nodes, waypoints and zones already on the map (e.g. zones saved from an earlier session)
+        for (String key : new String[] { NodeDto.KEY_IS_NODE, WaypointDto.KEY_IS_WAYPOINT,
+                ExclusionZoneTool.KEY_IS_EXCLUSION, AoZoneTool.KEY_IS_AO })
             for (MapItem item : mv.getRootGroup().deepFindItems(key, "true"))
-                putZone(item);
+                registry.onItem(item);
         registry.addListener(registryListener);
         detailsProvider = new DetailsProvider(mv.getContext(), registry);
         detailsProvider.register();
@@ -204,15 +206,22 @@ public class LocalServicesPlugin implements IPlugin {
             channel.shutdownNow();
             channel = null;
         }
-        removeCoverage();
+        if (coverage != null) {
+            coverage.dispose();
+            coverage = null;
+        }
         MapView mv = MapView.getMapView();
-        mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REFRESH, zoneListener);
-        mv.getMapEventDispatcher().removeMapEventListener(MapEvent.ITEM_REMOVED, zoneListener);
+        for (String type : ITEM_EVENTS)
+            mv.getMapEventDispatcher().removeMapEventListener(type, itemListener);
         detailsProvider.unregister();
         registry.removeListener(registryListener);
         if (nodeGroup != null) {
             mv.getRootGroup().removeGroup(nodeGroup);
             nodeGroup = null;
+        }
+        if (waypointGroup != null) {
+            mv.getRootGroup().removeGroup(waypointGroup);
+            waypointGroup = null;
         }
         registry.clear();
         zoneToolbar.dispose();
@@ -244,7 +253,7 @@ public class LocalServicesPlugin implements IPlugin {
                     .build();
         }
 
-        showZones();   // picks up zones edited or deleted while the pane was closed
+        registryListener.onRegistryChanged();   // picks up zones edited while the pane was closed
 
         // if the plugin pane is not visible, show it!
         if (!uiService.isPaneVisible(templatePane)) {
@@ -258,14 +267,13 @@ public class LocalServicesPlugin implements IPlugin {
         bindToolbar(view);
         landing = new LandingPane(pluginContext, view.findViewById(R.id.picture_page));
         view.findViewById(R.id.btn_draw_zones).setOnClickListener(v -> ZoneToolbar.open());
-        addSampleNodes();
-        showNodes();
+        addSampleNodes();   // the map listener files them; then the lists are drawn
+        registryListener.onRegistryChanged();
 
         localToggle = view.findViewById(R.id.local_toggle);
         remoteAddress = view.findViewById(R.id.remote_address);
         output = view.findViewById(R.id.output);
         progressBar = view.findViewById(R.id.progress);
-        coverageControls = view.findViewById(R.id.coverage_controls);
 
         view.findViewById(R.id.btn_range).setOnClickListener(v -> rangeBearing());
         view.findViewById(R.id.btn_optimise).setOnClickListener(v -> optimiseRoute());
@@ -273,25 +281,6 @@ public class LocalServicesPlugin implements IPlugin {
         view.findViewById(R.id.btn_coverage_dialog).setOnClickListener(v ->
                 CoverageDialog.show(MapView.getMapView(), new ArrayList<>(registry.nodes())));
         view.findViewById(R.id.btn_cancel).setOnClickListener(v -> cancelRunning());
-
-        view.findViewById(R.id.btn_share).setOnClickListener(v -> shareCoverage());
-        view.findViewById(R.id.btn_remove).setOnClickListener(v -> removeCoverage());
-        SeekBar opacity = view.findViewById(R.id.coverage_opacity);
-        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                if (coverage != null)
-                    coverage.setOpacity(progress / 100f);
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar bar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar bar) {
-            }
-        });
     }
 
     /**
@@ -329,8 +318,9 @@ public class LocalServicesPlugin implements IPlugin {
     // ---- landing page lists ----------------------------------------------------------------
 
     /**
-     * Made-up nodes near the map centre, as real markers so each has an ATAK details page. Replace
-     * with the real node feed: make (or find) the marker, wrap it in a NodeDto, registry.putNode().
+     * Made-up nodes near the map centre, as real markers so each has an ATAK details page. A real
+     * node feed does the same: flag the marker as a node, set its profile and status, add it to a
+     * map group. The map listener puts it in the registry; there's nothing else to call.
      */
     private void addSampleNodes() {
         MapView mv = MapView.getMapView();
@@ -347,21 +337,17 @@ public class LocalServicesPlugin implements IPlugin {
         m.setType("a-f-G-U-C");
         m.setTitle(name);
         m.setMetaString("callsign", name);
+        // the flag and details go on before the marker is added, so ITEM_ADDED sees them
+        m.setMetaString(NodeDto.KEY_IS_NODE, "true");
+        m.setMetaString(NodeDto.KEY_PROFILE, profile);
+        m.setMetaString(NodeDto.KEY_STATUS, status);
         nodeGroup.addItem(m);
-        registry.putNode(new NodeDto(m, profile, status));
     }
 
-    /** Wraps an AO / exclusion shape in a ZoneDto; ignores everything else. */
-    private void putZone(MapItem item) {
-        if (!(item instanceof Shape))
-            return;
-        if (item.hasMetaValue(AoZoneTool.KEY_IS_AO))
-            registry.putZone((Shape) item, ZoneDto.Kind.AO);
-        else if (item.hasMetaValue(ExclusionZoneTool.KEY_IS_EXCLUSION))
-            registry.putZone((Shape) item, ZoneDto.Kind.EXCLUSION);
-    }
-
-    /** The landing pane's node list, rendered from the NodeDtos, offline first. */
+    /**
+     * The node list, offline first. Each row's tick box selects the node: every area drawn while
+     * it's ticked is assigned it.
+     */
     private void showNodes() {
         if (landing == null)
             return;
@@ -369,7 +355,8 @@ public class LocalServicesPlugin implements IPlugin {
         for (NodeDto n : registry.nodes()) {
             boolean offline = "OFFLINE".equals(n.status);
             LandingPane.Item row = new LandingPane.Item(n.callsign(), n.profile,
-                    n.status, offline, n.marker.getPoint());
+                    n.status, offline, n.marker.getPoint(),
+                    new LandingPane.Check(n.callsign(), n.selected, on -> registry.select(n, on)));
             if (offline) rows.add(0, row); else rows.add(row);
         }
         landing.setItems(LandingPane.Category.NODES, rows);
@@ -377,7 +364,8 @@ public class LocalServicesPlugin implements IPlugin {
 
     /**
      * The zones, from the ZoneDtos, exclusion zones first. Each opens into every node with a tick
-     * box; ticking one assigns it, which redraws this list and any open details page.
+     * box: built from the registry each time, so a node added since shows up unticked and a node
+     * removed is gone. Ticking one assigns it, which redraws this list and any open details page.
      */
     private void showZones() {
         if (landing == null)
@@ -412,25 +400,46 @@ public class LocalServicesPlugin implements IPlugin {
         return Math.abs(twice) / 2;
     }
 
-    /** The optimised route from 2., in visiting order, with leg and running distance. */
-    private void showWaypoints(List<LatLon> points, OptimiseRouteResult r) {
-        List<LandingPane.Item> waypoints = new ArrayList<>();
-        GeoPoint previous = null;
-        double total = 0;
+    /**
+     * The optimised route from 2. as waypoint markers, replacing the last route's. The map
+     * listener files each one in the registry.
+     */
+    private void placeWaypoints(List<LatLon> points, OptimiseRouteResult r) {
+        MapView mv = MapView.getMapView();
+        if (waypointGroup == null)
+            waypointGroup = mv.getRootGroup().addGroup("Route");
+        waypointGroup.clearItems();   // ITEM_REMOVED for each: they leave the registry
         for (int i = 0; i < r.getOrderCount(); i++) {
             LatLon p = points.get(r.getOrder(i));
-            GeoPoint point = new GeoPoint(p.getLat(), p.getLon());
+            Marker m = new Marker(new GeoPoint(p.getLat(), p.getLon()),
+                    "localsvctemplate.waypoint." + UUID.randomUUID());
+            m.setType("b-m-p-w");   // ATAK's waypoint type
+            m.setTitle(i == 0 ? "WP 1 (start)" : "WP " + (i + 1));
+            m.setMetaBoolean("nevercot", true);
+            m.setMetaString(WaypointDto.KEY_IS_WAYPOINT, "true");
+            m.setMetaInteger(WaypointDto.KEY_ORDER, i);
+            waypointGroup.addItem(m);
+        }
+    }
+
+    /** The waypoint list, in visiting order, with leg and running distance. */
+    private void showWaypoints() {
+        if (landing == null)
+            return;
+        List<LandingPane.Item> rows = new ArrayList<>();
+        GeoPoint previous = null;
+        double total = 0;
+        for (WaypointDto w : registry.waypoints()) {
+            GeoPoint point = w.marker.getPoint();
             double leg = previous == null ? 0 : previous.distanceTo(point);
             total += leg;
-            waypoints.add(new LandingPane.Item(
-                    i == 0 ? "WP 1  (start)" : "WP " + (i + 1),
-                    String.format(Locale.US, "%.5f, %.5f", p.getLat(), p.getLon()),
+            rows.add(new LandingPane.Item(w.marker.getTitle(),
+                    String.format(Locale.US, "%.5f, %.5f", point.getLatitude(), point.getLongitude()),
                     String.format(Locale.US, "+%.1f km  (%.1f)", leg / 1000, total / 1000),
-                    false,
-                    point));
+                    false, point));
             previous = point;
         }
-        landing.setItems(LandingPane.Category.WAYPOINTS, waypoints);
+        landing.setItems(LandingPane.Category.WAYPOINTS, rows);
     }
 
     private static GeoPoint offset(GeoPoint c, double dLat, double dLon) {
@@ -526,7 +535,7 @@ public class LocalServicesPlugin implements IPlugin {
                             showProgress(update.getProgress());
                         } else if (update.hasResult()) {
                             OptimiseRouteResult r = update.getResult();
-                            showWaypoints(request.getPointsList(), r);
+                            placeWaypoints(request.getPointsList(), r);
                             output.setText(String.format(Locale.US,
                                     "optimise route -> %.0f m (was %.0f m)\norder: %s",
                                     r.getLengthM(), r.getInitialLengthM(), r.getOrderList()));
@@ -575,39 +584,15 @@ public class LocalServicesPlugin implements IPlugin {
 
     // ---- the coverage map on the map (coverage/) ----------------------------------------------
 
-    /** Puts the image on the map, replacing the previous one. */
+    /**
+     * Puts the image on the map, replacing the previous one. Tap it on the map for Transparency,
+     * Share and Remove.
+     */
     private void showCoverage(byte[] png, com.example.calc.proto.GeoBounds b) {
-        if (coverage == null) {
-            GLLayerFactory.register(GLCoverageLayer.SPI);   // tells ATAK how to draw a CoverageLayer
-            coverage = new CoverageLayer("Coverage");
-            SeekBar opacity = coverageControls.findViewById(R.id.coverage_opacity);
-            coverage.setOpacity(opacity.getProgress() / 100f);
-            MapView.getMapView().addLayer(MapView.RenderStack.MAP_SURFACE_OVERLAYS, coverage);
-        }
+        if (coverage == null)
+            coverage = new CoverageMap(MapView.getMapView(), pluginContext);
         // Decoding ~1 MP is quick enough for a demo; decode bigger images off the UI thread.
-        coverage.setImage(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
-        coverageControls.setVisibility(View.VISIBLE);
-    }
-
-    /** Sends it as a data package: a KMZ that any ATAK shows as an image overlay. */
-    private void shareCoverage() {
-        if (coverage == null)
-            return;
-        try {
-            CoverageShare.send(MapView.getMapView(), coverage);
-        } catch (IOException e) {
-            output.setText("share failed: " + e.getMessage());
-        }
-    }
-
-    private void removeCoverage() {
-        if (coverage == null)
-            return;
-        MapView.getMapView().removeLayer(MapView.RenderStack.MAP_SURFACE_OVERLAYS, coverage);
-        GLLayerFactory.unregister(GLCoverageLayer.SPI);
-        coverage = null;
-        if (coverageControls != null)
-            coverageControls.setVisibility(View.GONE);
+        coverage.show(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
     }
 
     /**

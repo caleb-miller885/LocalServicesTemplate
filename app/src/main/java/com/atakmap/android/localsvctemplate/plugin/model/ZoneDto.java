@@ -1,5 +1,8 @@
 package com.atakmap.android.localsvctemplate.plugin.model;
 
+import com.atakmap.android.localsvctemplate.plugin.zones.AoZoneTool;
+import com.atakmap.android.localsvctemplate.plugin.zones.ExclusionZoneTool;
+import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.Shape;
 
 import java.util.ArrayList;
@@ -17,6 +20,17 @@ public class ZoneDto {
     public ZoneDto(Shape shape, Kind kind) {
         this.shape = shape;
         this.kind = kind;
+    }
+
+    /** The kind from the flag the zone tools put on the shape, or null if it isn't a zone. */
+    public static Kind kindOf(MapItem item) {
+        if (!(item instanceof Shape))
+            return null;
+        if (item.hasMetaValue(AoZoneTool.KEY_IS_AO))
+            return Kind.AO;
+        if (item.hasMetaValue(ExclusionZoneTool.KEY_IS_EXCLUSION))
+            return Kind.EXCLUSION;
+        return null;
     }
 
     public String uid() {

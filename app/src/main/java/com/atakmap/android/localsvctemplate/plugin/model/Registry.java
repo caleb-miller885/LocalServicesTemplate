@@ -1,20 +1,24 @@
 package com.atakmap.android.localsvctemplate.plugin.model;
 
+import com.atakmap.android.maps.MapItem;
+import com.atakmap.android.maps.Marker;
 import com.atakmap.android.maps.Shape;
-import com.atakmap.coremap.maps.coords.GeoPoint;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Every node and zone the plugin knows, by map item UID. The landing pane and the details views
- * both read from here; every change notifies the listeners so they redraw.
+ * Every node, waypoint and zone the plugin knows, by map item UID. It's fed by one map listener
+ * (ITEM_ADDED / ITEM_REFRESH / ITEM_REMOVED → {@link #onItem} / {@link #remove}); the landing pane
+ * and the details views read from here, and every change notifies the listeners so they redraw.
  *
- * Assignment is explicit: a new zone starts with the nodes inside it, then only
- * {@link #assign} changes it (the landing pane's tick boxes).
+ * Assignment: a new zone starts with the nodes ticked in the node list; after that only
+ * {@link #assign} changes it (the zone's tick boxes). A node that appears later starts unassigned
+ * in every zone; a node that goes is taken off every zone.
  *
  * Call on the UI thread.
  */
@@ -25,6 +29,7 @@ public class Registry {
     }
 
     private final Map<String, NodeDto> nodes = new LinkedHashMap<>();
+    private final Map<String, WaypointDto> waypoints = new LinkedHashMap<>();
     private final Map<String, ZoneDto> zones = new LinkedHashMap<>();
     private final List<Listener> listeners = new ArrayList<>();
 
@@ -40,6 +45,13 @@ public class Registry {
         return nodes.values();
     }
 
+    /** In visiting order. */
+    public List<WaypointDto> waypoints() {
+        List<WaypointDto> l = new ArrayList<>(waypoints.values());
+        l.sort(Comparator.comparingInt(WaypointDto::order));
+        return l;
+    }
+
     public Collection<ZoneDto> zones() {
         return zones.values();
     }
@@ -52,23 +64,40 @@ public class Registry {
         return zones.get(uid);
     }
 
-    public void putNode(NodeDto node) {
-        nodes.put(node.uid(), node);
+    /**
+     * A map item was added or refreshed: files it as a node, waypoint or zone by its flags, or
+     * ignores it. A refresh of a known item keeps its state (a node's tick, a zone's nodes).
+     */
+    public void onItem(MapItem item) {
+        String uid = item.getUID();
+        if (NodeDto.isNode(item)) {
+            NodeDto known = nodes.get(uid);
+            if (known != null)
+                known.update();
+            else
+                nodes.put(uid, new NodeDto((Marker) item));
+        } else if (WaypointDto.isWaypoint(item)) {
+            if (!waypoints.containsKey(uid))
+                waypoints.put(uid, new WaypointDto((Marker) item));
+        } else if (ZoneDto.kindOf(item) != null) {
+            if (!zones.containsKey(uid)) {
+                ZoneDto zone = new ZoneDto((Shape) item, ZoneDto.kindOf(item));
+                for (NodeDto n : nodes.values())
+                    if (n.selected)
+                        zone.nodes.add(n);
+                zones.put(uid, zone);
+            }
+        } else {
+            return;   // not ours
+        }
         changed();
     }
 
-    /**
-     * Adds a zone, or - if the shape is already known (it was edited, so ATAK refreshed it) -
-     * just tells the listeners, keeping its assignment.
-     */
-    public void putZone(Shape shape, ZoneDto.Kind kind) {
-        if (!zones.containsKey(shape.getUID())) {
-            ZoneDto zone = new ZoneDto(shape, kind);
-            for (NodeDto n : nodes.values())
-                if (inside(n.marker.getPoint(), shape))
-                    zone.nodes.add(n);
-            zones.put(zone.uid(), zone);
-        }
+    /** Ticks or unticks a node in the node list. */
+    public void select(NodeDto node, boolean selected) {
+        if (node.selected == selected)
+            return;
+        node.selected = selected;
         changed();
     }
 
@@ -83,18 +112,19 @@ public class Registry {
         changed();
     }
 
-    /** Removes a node or zone by UID; does nothing if it isn't one of ours. */
+    /** Removes a node, waypoint or zone by UID; does nothing if it isn't one of ours. */
     public void remove(String uid) {
         NodeDto node = nodes.remove(uid);
         if (node != null)
             for (ZoneDto z : zones.values())
                 z.nodes.remove(node);
-        if (node != null || zones.remove(uid) != null)
+        if (node != null | waypoints.remove(uid) != null | zones.remove(uid) != null)
             changed();
     }
 
     public void clear() {
         nodes.clear();
+        waypoints.clear();
         zones.clear();
         changed();
     }
@@ -102,19 +132,5 @@ public class Registry {
     private void changed() {
         for (Listener l : new ArrayList<>(listeners))
             l.onRegistryChanged();
-    }
-
-    /** Ray casting, flat-earth: fine for zones a few km across. */
-    private static boolean inside(GeoPoint p, Shape shape) {
-        GeoPoint[] poly = shape.getPoints();
-        boolean in = false;
-        double x = p.getLongitude(), y = p.getLatitude();
-        for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-            double xi = poly[i].getLongitude(), yi = poly[i].getLatitude();
-            double xj = poly[j].getLongitude(), yj = poly[j].getLatitude();
-            if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
-                in = !in;
-        }
-        return in;
     }
 }

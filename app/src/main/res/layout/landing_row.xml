@@ -16,6 +16,15 @@
         android:orientation="horizontal"
         android:paddingLeft="12dp">
 
+        <!-- rows that can be selected (nodes): ticked nodes go to the next area drawn -->
+        <CheckBox
+            android:id="@+id/row_select"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="4dp"
+            android:focusable="false"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"

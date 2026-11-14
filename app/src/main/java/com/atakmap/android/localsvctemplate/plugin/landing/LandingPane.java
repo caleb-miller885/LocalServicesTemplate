@@ -65,6 +65,20 @@ public class LandingPane {
             this.point = point;
             this.id = null;
             this.checks = Collections.emptyList();
+            this.select = null;
+        }
+
+        /** A row with a tick box at its start (e.g. a node: ticked = selected). */
+        public Item(String title, String detail, String statusText, boolean attention,
+                GeoPoint point, Check select) {
+            this.title = title;
+            this.detail = detail;
+            this.statusText = statusText;
+            this.attention = attention;
+            this.point = point;
+            this.id = null;
+            this.checks = Collections.emptyList();
+            this.select = select;
         }
 
         /**
@@ -81,10 +95,12 @@ public class LandingPane {
             this.point = point;
             this.id = id;
             this.checks = checks;
+            this.select = null;
         }
 
         final String id;
         final List<Check> checks;
+        final Check select;   // null = no tick box at the start of the row
     }
 
     /** One tick box under a row; {@code onChange} gets the new state. */
@@ -274,8 +290,21 @@ public class LandingPane {
             status.setTextColor(item.attention
                     ? pluginContext.getColor(R.color.white) : secondary());
             status.setTypeface(null, item.attention ? Typeface.BOLD : Typeface.NORMAL);
+            bindSelect(row, item);
             bindChecks(row, item);
             return row;
+        }
+
+        private void bindSelect(View row, Item item) {
+            CheckBox cb = row.findViewById(R.id.row_select);
+            cb.setOnCheckedChangeListener(null);   // rows are recycled: drop the old row's listener
+            if (item.select == null) {
+                cb.setVisibility(View.GONE);
+                return;
+            }
+            cb.setVisibility(View.VISIBLE);
+            cb.setChecked(item.select.checked);
+            cb.setOnCheckedChangeListener((b, isChecked) -> item.select.onChange.accept(isChecked));
         }
 
         private void bindChecks(View row, Item item) {

@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- The coverage map's radial. Icons are ATAK's own (not in this plugin's assets, so ATAK's are
+     used); the actions are this plugin's, inlined by PluginMenuParser. -->
+<menu
+    buttonBg='bgs/button.xml'
+    buttonRadius='65'
+    buttonSpan='120'
+    buttonWidth='90' >
+
+    <button angle='-90'
+            icon='icons/delete.png'
+            onClick='actions/coverage_remove.xml' />
+
+    <button icon='icons/transparency.png'
+            onClick='actions/coverage_transparency.xml' />
+
+    <button icon='icons/send_icon.png'
+            onClick='actions/coverage_share.xml' />
+</menu>
