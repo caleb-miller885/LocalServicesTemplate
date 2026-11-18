@@ -40,6 +40,7 @@ import com.example.calc.proto.RangeBearingResult;
 import com.example.calc.proto.RenderHeatmapRequest;
 import com.example.calc.proto.RenderHeatmapUpdate;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -515,7 +516,11 @@ public class LocalServicesPlugin implements IPlugin {
     private void showCoverage(byte[] png, com.example.calc.proto.GeoBounds b) {
         if (coverage == null)
             return;   // stopped
-        coverage.show(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
+        try {
+            coverage.show(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
+        } catch (IOException e) {
+            output.setText("coverage map failed: " + e.getMessage());
+        }
     }
 
     /**

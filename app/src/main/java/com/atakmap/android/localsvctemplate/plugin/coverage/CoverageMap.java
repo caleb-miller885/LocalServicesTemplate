@@ -25,8 +25,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -49,29 +47,22 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>No ghosts: ATAK keeps imported overlays in its GRG database across restarts, and a restart
  * or crash never calls {@link #dispose()}. So every KMZ in our folder is a coverage overlay, and
- * {@link #clear()} deletes them all (overlay first, then file). It runs on start, before each
- * new map, and on stop - on one thread of ours, in order with the imports, so a delete never
- * overtakes the import it is meant to undo.
+ * {@link #remove()} deletes them all - on start, before each new map, and on stop.
  */
 public final class CoverageMap {
 
     private static final String TAG = "CoverageMap";
     private static final String FOLDER = "tools/localsvctemplate";
 
-    // file work and ATAK's importer, one job at a time, in order
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(
-            r -> new Thread(r, "CoverageMap"));
-
     private final CoverageLegend legend;
-    private volatile String current;   // the KMZ name on the map, null if none
+    private String current;   // the KMZ name on the map, null if none
 
     // The user deleted the overlay from its radial or Overlay Manager: the scale goes too.
     private final BroadcastReceiver deleted = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String uri = intent.getStringExtra(ImportReceiver.EXTRA_URI);
-            String name = current;
-            if (name != null && uri != null && uri.contains(name)) {
+            if (current != null && uri != null && uri.contains(current)) {
                 current = null;
                 legend.setVisible(false);
             }
@@ -89,13 +80,13 @@ public final class CoverageMap {
     }
 
     /** Shows a PNG covering the box lowerLeft..upperRight, replacing any coverage shown. */
-    public void show(byte[] png, GeoPoint lowerLeft, GeoPoint upperRight) {
+    public void show(byte[] png, GeoPoint lowerLeft, GeoPoint upperRight) throws IOException {
         show(png, new GeoBounds(upperRight.getLatitude(), lowerLeft.getLongitude(),
                 lowerLeft.getLatitude(), upperRight.getLongitude()));
     }
 
     /** Shows a PNG covering the square radiusM either side of centre (N, S, E and W). */
-    public void show(byte[] png, GeoPoint centre, double radiusM) {
+    public void show(byte[] png, GeoPoint centre, double radiusM) throws IOException {
         double dLat = radiusM / 111_320.0;
         double dLon = dLat / Math.cos(Math.toRadians(centre.getLatitude()));
         show(png, new GeoBounds(centre.getLatitude() + dLat, centre.getLongitude() - dLon,
@@ -103,21 +94,19 @@ public final class CoverageMap {
     }
 
     /** Shows a PNG covering the bounds, replacing any coverage shown. */
-    public void show(byte[] png, GeoBounds bounds) {
+    public void show(byte[] png, GeoBounds bounds) throws IOException {
+        remove();
         // a new name each time, so ATAK's renderer never reuses the last image
-        String name = "Coverage_" + System.currentTimeMillis();
-        current = name;
+        current = "Coverage_" + System.currentTimeMillis();
+        File kmz = writeKmz(current, png, bounds);
+
+        // ATAK imports it on its own import threads
+        Intent i = new Intent(ImportExportMapComponent.ACTION_IMPORT_DATA);
+        i.putExtra(ImportReceiver.EXTRA_CONTENT, GRGMapComponent.IMPORTER_CONTENT_TYPE);
+        i.putExtra(ImportReceiver.EXTRA_MIME_TYPE, GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE);
+        i.putExtra(ImportReceiver.EXTRA_URI, Uri.fromFile(kmz).toString());
+        AtakBroadcast.getInstance().sendBroadcast(i);
         legend.setVisible(true);
-        worker.execute(() -> {
-            clear();
-            try {
-                importer().importData(Uri.fromFile(writeKmz(name, png, bounds)),
-                        GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE, null);
-            } catch (Exception e) {
-                Log.e(TAG, "import " + name + " failed", e);
-            }
-            refreshOverlayManager();
-        });
     }
 
     /** The scale shown in the corner, with the default colours (red strongest .. blue weakest). */
@@ -130,55 +119,37 @@ public final class CoverageMap {
         legend.setScale(strongDbm, weakDbm, colours);
     }
 
-    /** Takes the coverage off the map. */
+    /**
+     * Deletes every coverage overlay and its KMZ. Deleting from ATAK's GRG database is quick, so
+     * it is done here, directly. A KMZ whose overlay couldn't be deleted is kept for next time.
+     */
     public void remove() {
         current = null;
         legend.setVisible(false);
-        worker.execute(() -> {
-            clear();
-            refreshOverlayManager();
-        });
-    }
-
-    public void dispose() {
-        AtakBroadcast.getInstance().unregisterReceiver(deleted);
-        remove();
-        worker.shutdown();   // the remove just queued still runs
-        legend.dispose();
-    }
-
-    /**
-     * Deletes every coverage overlay and its KMZ. A KMZ whose overlay couldn't be deleted is
-     * kept, so the next clear retries. Worker thread only.
-     */
-    private static void clear() {
+        Importer grg = ImporterManager.findImporter(GRGMapComponent.IMPORTER_CONTENT_TYPE,
+                GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE);
         File[] files = IOProviderFactory.listFiles(FileSystemUtils.getItem(FOLDER));
-        if (files == null)
+        if (grg == null || files == null)
             return;
         for (File kmz : files) {
             if (!kmz.getName().endsWith(".kmz"))
                 continue;
             try {
-                importer().deleteData(Uri.fromFile(kmz), GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE);
+                grg.deleteData(Uri.fromFile(kmz), GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE);
                 IOProviderFactory.delete(kmz);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 Log.e(TAG, "delete " + kmz + " failed", e);
             }
         }
-    }
-
-    /** ATAK's GRG (image overlay) importer, called directly rather than by broadcast. */
-    private static Importer importer() throws IOException {
-        Importer grg = ImporterManager.findImporter(GRGMapComponent.IMPORTER_CONTENT_TYPE,
-                GRGMapComponent.IMPORTER_DEFAULT_MIME_TYPE);
-        if (grg == null)
-            throw new IOException("no GRG importer");
-        return grg;
-    }
-
-    private static void refreshOverlayManager() {
+        // Overlay Manager stops listing it
         AtakBroadcast.getInstance().sendBroadcast(
                 new Intent(HierarchyListReceiver.REFRESH_HIERARCHY));
+    }
+
+    public void dispose() {
+        AtakBroadcast.getInstance().unregisterReceiver(deleted);
+        remove();
+        legend.dispose();
     }
 
     /** A KMZ is a zip: doc.kml, plus the image it refers to. */
