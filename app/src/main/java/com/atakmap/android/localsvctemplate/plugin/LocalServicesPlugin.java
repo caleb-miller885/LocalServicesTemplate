@@ -40,7 +40,6 @@ import com.example.calc.proto.RangeBearingResult;
 import com.example.calc.proto.RenderHeatmapRequest;
 import com.example.calc.proto.RenderHeatmapUpdate;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -187,6 +186,9 @@ public class LocalServicesPlugin implements IPlugin {
         registry.addListener(registryListener);
         detailsProvider = new DetailsProvider(mv.getContext(), registry);
         detailsProvider.register();
+        // made now, not on the first render: it deletes coverage left on the map by an earlier
+        // run that ended without onStop (restart, crash)
+        coverage = new CoverageMap(mv);
 
         // the plugin is starting, add the buttons to the toolbar
         if (uiService == null)
@@ -512,12 +514,8 @@ public class LocalServicesPlugin implements IPlugin {
      */
     private void showCoverage(byte[] png, com.example.calc.proto.GeoBounds b) {
         if (coverage == null)
-            coverage = new CoverageMap(MapView.getMapView());
-        try {
-            coverage.show(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
-        } catch (IOException e) {
-            output.setText("coverage map failed: " + e.getMessage());
-        }
+            return;   // stopped
+        coverage.show(png, new GeoBounds(b.getNorth(), b.getWest(), b.getSouth(), b.getEast()));
     }
 
     /**
